@@ -26,6 +26,9 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: Prisma generate
+        run: pnpm --filter @collab/server prisma:generate
+
       - name: Lint
         run: pnpm lint
 
@@ -37,3 +40,6 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      - name: Build
+        run: pnpm build

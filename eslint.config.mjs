@@ -37,6 +37,14 @@ export default tseslint.config(
     },
   },
   {
+    // NestJS uses constructor parameter classes as DI tokens via emitDecoratorMetadata.
+    // `import type` would erase those tokens at runtime and break DI.
+    files: ['apps/server/**/*.ts'],
+    rules: {
+      '@typescript-eslint/consistent-type-imports': 'off',
+    },
+  },
+  {
     files: ['apps/doc-web/**/*.{ts,tsx}', 'apps/monitor-dashboard/**/*.{ts,tsx}'],
     plugins: {
       react,

@@ -1,0 +1,59 @@
+// Prisma schema for collab-doc-platform M1
+// Docs: https://www.prisma.io/docs
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum DocumentRole {
+  OWNER
+  EDITOR
+  COMMENTER
+  VIEWER
+}
+
+model User {
+  id            String     @id @default(cuid())
+  email         String     @unique
+  name          String
+  passwordHash  String
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  documents     Document[] @relation("DocumentOwner")
+  memberships   DocumentMember[]
+}
+
+model Document {
+  id        String   @id @default(cuid())
+  title     String   @default("Untitled")
+  /// Tiptap JSON content. Stored as JSONB for future querying.
+  content   Json     @default("{}")
+  ownerId   String
+  owner     User     @relation("DocumentOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members   DocumentMember[]
+
+  @@index([ownerId])
+  @@index([updatedAt])
+}
+
+model DocumentMember {
+  documentId String
+  userId     String
+  role       DocumentRole @default(VIEWER)
+  createdAt  DateTime     @default(now())
+
+  document   Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([documentId, userId])
+  @@index([userId])
+}

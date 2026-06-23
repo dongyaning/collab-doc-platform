@@ -10,7 +10,7 @@
 > - Mini Builder：`mini-builder-design.md`
 > - 协作协议：`collab-protocol.md`
 
-当前里程碑：**M0 — 工程地基**。
+当前里程碑：**M1 — 文档业务 MVP（单人）**。
 
 ## 仓库结构
 
@@ -53,6 +53,27 @@ pnpm --filter @collab/doc-web dev
 pnpm --filter @collab/server dev
 ```
 
+## M1 启动指南（单人 MVP）
+
+```bash
+# 1. 启动 Postgres
+docker compose up -d postgres
+
+# 2. 准备 .env
+cp .env.example .env
+
+# 3. 初始化数据库
+pnpm --filter @collab/server prisma:migrate
+pnpm --filter @collab/server seed   # 生成 demo@collab.dev / demo1234
+
+# 4. 启动服务端 + 前端
+pnpm --filter @collab/server dev
+pnpm --filter @collab/doc-web dev
+
+# 5. 浏览器打开 http://localhost:5173
+#    用 demo@collab.dev / demo1234 登录
+```
+
 ## M0 验收
 
 - [x] pnpm + monorepo（apps + packages）
@@ -63,7 +84,7 @@ pnpm --filter @collab/server dev
 - [x] 各包最小可跑代码 + README
 - [ ] `pnpm install` 后 `pnpm lint && pnpm typecheck && pnpm build` 全绿（首次安装请在本地执行验证）
 
-## 下一步：M1 — 文档业务 MVP
+## 下一步：M2 — 实时协作
 
 详见 `collab-doc-platform-roadmap.md`。
 
