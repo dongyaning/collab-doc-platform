@@ -32,17 +32,39 @@ model User {
 model Document {
   id        String   @id @default(cuid())
   title     String   @default("Untitled")
-  /// Tiptap JSON content. Stored as JSONB for future querying.
+  /// Legacy Tiptap JSON. Used as fallback when a doc has no Yjs state yet (M1 docs).
   content   Json     @default("{}")
+  /// Latest Yjs document state (binary, encoded via Y.encodeStateAsUpdate).
+  yjsState  Bytes?
+  /// Monotonic version, bumped on each persisted Yjs snapshot.
+  version   Int      @default(0)
   ownerId   String
   owner     User     @relation("DocumentOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   members   DocumentMember[]
+  versions  DocumentVersion[]
 
   @@index([ownerId])
   @@index([updatedAt])
+}
+
+model DocumentVersion {
+  id          String   @id @default(cuid())
+  documentId  String
+  version     Int
+  yjsState    Bytes
+  /// User who triggered the snapshot (null = automatic).
+  createdById String?
+  /// Optional label for manual snapshots.
+  label       String?
+  createdAt   DateTime @default(now())
+
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, version])
+  @@index([documentId, createdAt])
 }
 
 model DocumentMember {
