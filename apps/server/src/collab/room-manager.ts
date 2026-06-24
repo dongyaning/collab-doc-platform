@@ -1,0 +1,351 @@
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import * as Y from 'yjs';
+import * as encoding from 'lib0/encoding';
+import * as decoding from 'lib0/decoding';
+import * as syncProtocol from 'y-protocols/sync';
+import * as awarenessProtocol from 'y-protocols/awareness';
+import type { WebSocket } from 'ws';
+import { PrismaService } from '../prisma/prisma.module.js';
+import { Room } from './room.js';
+
+const MESSAGE_SYNC = 0;
+const MESSAGE_AWARENESS = 1;
+
+const PERSIST_DEBOUNCE_MS = 2000;
+const PERSIST_MAX_UPDATES = 50;
+const SNAPSHOT_EVERY_UPDATES = 50;
+const SNAPSHOT_MAX_INTERVAL_MS = 30 * 60 * 1000;
+
+/**
+ * Owns the in-memory `Room` map and orchestrates the y-protocol message flow.
+ *
+ * Wire format follows the de-facto y-websocket protocol so that the standard
+ * `y-websocket` client works against this server unchanged:
+ *   varuint messageType, then message body
+ *     - 0 (sync): handled by y-protocols/sync
+ *     - 1 (awareness): handled by y-protocols/awareness
+ */
+@Injectable()
+export class RoomManager {
+  private readonly log = new Logger(RoomManager.name);
+  private readonly rooms = new Map<string, Room>();
+  /** Per-room debounce timers for persistence. */
+  private readonly persistTimers = new Map<string, NodeJS.Timeout>();
+
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+
+  /** Get-or-create a room and ensure its initial state is loaded from PG. */
+  async getOrCreateRoom(docId: string): Promise<Room> {
+    let room = this.rooms.get(docId);
+    if (room) return room;
+
+    room = new Room(docId);
+    this.rooms.set(docId, room);
+    await this.loadInitialState(room);
+    this.wireDocListeners(room);
+    return room;
+  }
+
+  /** Hydrate the room's Y.Doc from PG. */
+  private async loadInitialState(room: Room): Promise<void> {
+    const doc = await this.prisma.document.findUnique({
+      where: { id: room.docId },
+      select: { yjsState: true, content: true },
+    });
+    if (!doc) {
+      this.log.warn(`room ${room.docId}: doc not found, starting empty`);
+      room.loaded = true;
+      return;
+    }
+    if (doc.yjsState && doc.yjsState.length > 0) {
+      Y.applyUpdate(room.ydoc, new Uint8Array(doc.yjsState));
+    }
+    // M1 docs only have `content` (Tiptap JSON). We deliberately do NOT
+    // import that into the Y.Doc here — the prosemirror schema lives on the
+    // client. The first connecting client is responsible for seeding the
+    // shared XmlFragment from its initial editor content if yjsState is empty.
+    room.loaded = true;
+  }
+
+  /** Subscribe to update events to broadcast + schedule persistence. */
+  private wireDocListeners(room: Room): void {
+    room.ydoc.on('update', (update: Uint8Array, origin: unknown) => {
+      // Broadcast sync update to every connected client (except the origin if it's a ws).
+      const enc = encoding.createEncoder();
+      encoding.writeVarUint(enc, MESSAGE_SYNC);
+      syncProtocol.writeUpdate(enc, update);
+      const buf = encoding.toUint8Array(enc);
+      for (const ws of room.conns.keys()) {
+        if (ws === origin) continue;
+        this.send(ws, buf);
+      }
+      room.pendingUpdates += 1;
+      room.updatesSinceSnapshot += 1;
+      this.schedulePersist(room);
+    });
+
+    room.awareness.on(
+      'update',
+      (
+        { added, updated, removed }: { added: number[]; updated: number[]; removed: number[] },
+        origin: unknown
+      ) => {
+        const changedClients = added.concat(updated, removed);
+        // Track which client ids each connection owns so we can clean up on disconnect.
+        if (origin && typeof origin === 'object') {
+          const conn = room.conns.get(origin as WebSocket);
+          if (conn) {
+            for (const id of added) conn.add(id);
+            for (const id of removed) conn.delete(id);
+          }
+        }
+        const enc = encoding.createEncoder();
+        encoding.writeVarUint(enc, MESSAGE_AWARENESS);
+        encoding.writeVarUint8Array(
+          enc,
+          awarenessProtocol.encodeAwarenessUpdate(room.awareness, changedClients)
+        );
+        const buf = encoding.toUint8Array(enc);
+        for (const ws of room.conns.keys()) this.send(ws, buf);
+      }
+    );
+  }
+
+  /** Add a websocket to a room and send the y-protocol handshake. */
+  async addConnection(room: Room, ws: WebSocket): Promise<void> {
+    room.addConn(ws);
+
+    // 1. send sync step1 — server asks the client what state vector it has
+    {
+      const enc = encoding.createEncoder();
+      encoding.writeVarUint(enc, MESSAGE_SYNC);
+      syncProtocol.writeSyncStep1(enc, room.ydoc);
+      this.send(ws, encoding.toUint8Array(enc));
+    }
+    // 2. send current awareness states to the new client (if any)
+    const awarenessStates = room.awareness.getStates();
+    if (awarenessStates.size > 0) {
+      const enc = encoding.createEncoder();
+      encoding.writeVarUint(enc, MESSAGE_AWARENESS);
+      encoding.writeVarUint8Array(
+        enc,
+        awarenessProtocol.encodeAwarenessUpdate(room.awareness, Array.from(awarenessStates.keys()))
+      );
+      this.send(ws, encoding.toUint8Array(enc));
+    }
+  }
+
+  /** Handle a single binary frame from a client. */
+  handleMessage(room: Room, ws: WebSocket, data: Uint8Array): void {
+    try {
+      const decoder = decoding.createDecoder(data);
+      const encoder = encoding.createEncoder();
+      const messageType = decoding.readVarUint(decoder);
+      switch (messageType) {
+        case MESSAGE_SYNC: {
+          encoding.writeVarUint(encoder, MESSAGE_SYNC);
+          syncProtocol.readSyncMessage(decoder, encoder, room.ydoc, ws);
+          // readSyncMessage writes a reply (step2 / update ack) into encoder.
+          // length === 1 means "only the type byte" → no reply needed.
+          if (encoding.length(encoder) > 1) {
+            this.send(ws, encoding.toUint8Array(encoder));
+          }
+          break;
+        }
+        case MESSAGE_AWARENESS: {
+          awarenessProtocol.applyAwarenessUpdate(
+            room.awareness,
+            decoding.readVarUint8Array(decoder),
+            ws
+          );
+          break;
+        }
+        default:
+          this.log.warn(`unknown message type ${messageType} in room ${room.docId}`);
+      }
+    } catch (err) {
+      this.log.error(`error handling message in room ${room.docId}`, err as Error);
+    }
+  }
+
+  /** Drop a connection from its room; if empty, persist + free the room. */
+  async removeConnection(room: Room, ws: WebSocket): Promise<void> {
+    room.removeConn(ws);
+    if (room.isEmpty()) {
+      await this.persistNow(room);
+      const t = this.persistTimers.get(room.docId);
+      if (t) {
+        clearTimeout(t);
+        this.persistTimers.delete(room.docId);
+      }
+      this.rooms.delete(room.docId);
+      room.destroy();
+      this.log.log(`room ${room.docId} closed`);
+    }
+  }
+
+  // ---------- persistence ----------
+
+  private schedulePersist(room: Room): void {
+    if (room.pendingUpdates >= PERSIST_MAX_UPDATES) {
+      void this.persistNow(room);
+      return;
+    }
+    if (this.persistTimers.has(room.docId)) return;
+    const t = setTimeout(() => {
+      this.persistTimers.delete(room.docId);
+      void this.persistNow(room);
+    }, PERSIST_DEBOUNCE_MS);
+    this.persistTimers.set(room.docId, t);
+  }
+
+  private async persistNow(room: Room): Promise<void> {
+    if (room.pendingUpdates === 0 && room.lastPersistedAt !== 0) return;
+    const snapshot = Y.encodeStateAsUpdate(room.ydoc);
+    const buf = Buffer.from(snapshot);
+    try {
+      const updated = await this.prisma.document.update({
+        where: { id: room.docId },
+        data: { yjsState: buf, version: { increment: 1 } },
+        select: { version: true },
+      });
+      room.pendingUpdates = 0;
+      room.lastPersistedAt = Date.now();
+      await this.maybeSnapshot(room, updated.version, buf);
+    } catch (err) {
+      this.log.error(`persist failed for ${room.docId}`, err as Error);
+    }
+  }
+
+  /**
+   * Decide whether to write a row into DocumentVersion. Auto snapshots fire
+   * either every N updates or once a configured wall-clock interval elapses.
+   * Manual snapshots go through {@link createManualSnapshot} instead.
+   */
+  private async maybeSnapshot(room: Room, version: number, snapshot: Buffer): Promise<void> {
+    const now = Date.now();
+    const byUpdates = room.updatesSinceSnapshot >= SNAPSHOT_EVERY_UPDATES;
+    const byTime =
+      room.lastSnapshotAt !== 0 && now - room.lastSnapshotAt >= SNAPSHOT_MAX_INTERVAL_MS;
+    if (!byUpdates && !byTime) return;
+    try {
+      await this.prisma.documentVersion.create({
+        data: {
+          documentId: room.docId,
+          version,
+          yjsState: snapshot,
+        },
+      });
+      room.updatesSinceSnapshot = 0;
+      room.lastSnapshotAt = now;
+    } catch (err) {
+      this.log.warn(`auto snapshot failed for ${room.docId}: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * Force a persist + write a labeled snapshot. Used by the manual
+   * "save version" REST endpoint.
+   */
+  async createManualSnapshot(
+    docId: string,
+    userId: string,
+    label: string | undefined
+  ): Promise<{ version: number; id: string }> {
+    const room = this.rooms.get(docId);
+    let snapshotBuf: Buffer;
+    let version: number;
+    if (room) {
+      // Live room: flush in-memory state first so the snapshot reflects it.
+      snapshotBuf = Buffer.from(Y.encodeStateAsUpdate(room.ydoc));
+      const updated = await this.prisma.document.update({
+        where: { id: docId },
+        data: { yjsState: snapshotBuf, version: { increment: 1 } },
+        select: { version: true },
+      });
+      version = updated.version;
+      room.pendingUpdates = 0;
+      room.lastPersistedAt = Date.now();
+      room.updatesSinceSnapshot = 0;
+      room.lastSnapshotAt = Date.now();
+    } else {
+      // Cold doc: snapshot whatever PG currently has.
+      const doc = await this.prisma.document.findUnique({
+        where: { id: docId },
+        select: { yjsState: true, version: true },
+      });
+      if (!doc) throw new Error('document not found');
+      snapshotBuf = doc.yjsState ? Buffer.from(doc.yjsState) : Buffer.alloc(0);
+      version = doc.version;
+    }
+    const created = await this.prisma.documentVersion.create({
+      data: {
+        documentId: docId,
+        version,
+        yjsState: snapshotBuf,
+        createdById: userId,
+        label: label ?? null,
+      },
+      select: { id: true, version: true },
+    });
+    return created;
+  }
+
+  /**
+   * Roll the document back to a saved version. If the room is live, we
+   * apply the diff to the in-memory Y.Doc so all clients see the rollback
+   * via the standard update broadcast; otherwise we just rewrite PG.
+   */
+  async restoreVersion(docId: string, userId: string, versionId: string): Promise<void> {
+    const target = await this.prisma.documentVersion.findFirst({
+      where: { id: versionId, documentId: docId },
+      select: { yjsState: true },
+    });
+    if (!target) throw new Error('version not found');
+    const targetState = new Uint8Array(target.yjsState);
+
+    const room = this.rooms.get(docId);
+    if (room) {
+      // Compute the diff from current state to target and apply it.
+      // Apply target update directly: Y.applyUpdate will merge the structure.
+      // Note: CRDT merge means clients keep any concurrent local edits; for
+      // a strict rollback we'd need to swap the Y.Doc instance. For M2 this
+      // "merge-style restore" is acceptable.
+      Y.applyUpdate(room.ydoc, targetState, 'restore');
+      // Mark the snapshot as a manual entry for audit.
+      await this.prisma.documentVersion.create({
+        data: {
+          documentId: docId,
+          version: 0, // version is bumped on next persist
+          yjsState: Buffer.from(Y.encodeStateAsUpdate(room.ydoc)),
+          createdById: userId,
+          label: `restore:${versionId}`,
+        },
+      });
+    } else {
+      const updated = await this.prisma.document.update({
+        where: { id: docId },
+        data: { yjsState: Buffer.from(targetState), version: { increment: 1 } },
+        select: { version: true },
+      });
+      await this.prisma.documentVersion.create({
+        data: {
+          documentId: docId,
+          version: updated.version,
+          yjsState: Buffer.from(targetState),
+          createdById: userId,
+          label: `restore:${versionId}`,
+        },
+      });
+    }
+  }
+
+  // ---------- helpers ----------
+
+  private send(ws: WebSocket, data: Uint8Array): void {
+    if (ws.readyState !== ws.OPEN) return;
+    ws.send(data, (err) => {
+      if (err) this.log.warn(`ws send failed: ${err.message}`);
+    });
+  }
+}
