@@ -1,7 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
-import { documentsApi } from '../lib/endpoints';
+import { documentsApi, type DocumentSummary, type DocumentRole } from '../lib/endpoints';
 import { useAuthStore } from '../stores/auth.store';
+
+const ROLE_LABEL: Record<DocumentRole, string> = {
+  OWNER: 'Owner',
+  EDITOR: 'Editor',
+  COMMENTER: 'Commenter',
+  VIEWER: 'Viewer',
+};
 
 export function DocumentListPage() {
   const qc = useQueryClient();
@@ -27,6 +34,9 @@ export function DocumentListPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['documents'] }),
   });
 
+  const owned = (data ?? []).filter((d) => d.role === 'OWNER');
+  const shared = (data ?? []).filter((d) => d.role !== 'OWNER');
+
   return (
     <main style={{ maxWidth: 720, margin: '40px auto', fontFamily: 'system-ui' }}>
       <header
@@ -51,37 +61,94 @@ export function DocumentListPage() {
         {createMutation.isPending ? 'Creating…' : 'New document'}
       </button>
 
-      <ul style={{ marginTop: 24, padding: 0, listStyle: 'none' }}>
-        {isLoading && <li>Loading…</li>}
-        {data?.length === 0 && <li style={{ color: '#888' }}>No documents yet.</li>}
-        {data?.map((doc) => (
-          <li
-            key={doc.id}
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '12px 0',
-              borderBottom: '1px solid #eee',
+      {isLoading ? (
+        <p style={{ marginTop: 24 }}>Loading…</p>
+      ) : (
+        <>
+          <Section
+            title="My documents"
+            docs={owned}
+            empty="No documents yet."
+            onDelete={(id, title) => {
+              if (confirm(`Delete "${title}"?`)) removeMutation.mutate(id);
             }}
-          >
-            <Link to={`/documents/${doc.id}`} style={{ flex: 1 }}>
-              <strong>{doc.title || 'Untitled'}</strong>
-              <span style={{ marginLeft: 12, color: '#888', fontSize: 12 }}>
-                {new Date(doc.updatedAt).toLocaleString()}
-              </span>
-            </Link>
-            <button
-              onClick={() => {
-                if (confirm(`Delete "${doc.title}"?`)) removeMutation.mutate(doc.id);
-              }}
-              disabled={removeMutation.isPending}
-            >
-              Delete
-            </button>
-          </li>
-        ))}
-      </ul>
+            deletePending={removeMutation.isPending}
+          />
+          <Section
+            title="Shared with me"
+            docs={shared}
+            empty="Nothing shared with you yet."
+            showOwner
+          />
+        </>
+      )}
     </main>
+  );
+}
+
+function Section({
+  title,
+  docs,
+  empty,
+  showOwner,
+  onDelete,
+  deletePending,
+}: {
+  title: string;
+  docs: DocumentSummary[];
+  empty: string;
+  showOwner?: boolean;
+  onDelete?: (id: string, title: string) => void;
+  deletePending?: boolean;
+}) {
+  return (
+    <section style={{ marginTop: 28 }}>
+      <h2 style={{ fontSize: 14, color: '#666', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+        {title}
+      </h2>
+      <ul style={{ padding: 0, listStyle: 'none' }}>
+        {docs.length === 0 ? (
+          <li style={{ color: '#888' }}>{empty}</li>
+        ) : (
+          docs.map((doc) => (
+            <li
+              key={doc.id}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '12px 0',
+                borderBottom: '1px solid #eee',
+                gap: 12,
+              }}
+            >
+              <Link to={`/documents/${doc.id}`} style={{ flex: 1, minWidth: 0 }}>
+                <strong>{doc.title || 'Untitled'}</strong>
+                <div style={{ color: '#888', fontSize: 12, marginTop: 2 }}>
+                  {showOwner ? `Shared by ${doc.owner.name} · ` : ''}
+                  {new Date(doc.updatedAt).toLocaleString()}
+                </div>
+              </Link>
+              <span
+                style={{
+                  fontSize: 11,
+                  background: '#f0f0f0',
+                  borderRadius: 10,
+                  padding: '2px 8px',
+                  color: '#555',
+                }}
+              >
+                {ROLE_LABEL[doc.role]}
+              </span>
+              {onDelete ? (
+                <button onClick={() => onDelete(doc.id, doc.title)} disabled={deletePending}>
+                  Delete
+                </button>
+              ) : null}
+            </li>
+          ))
+        )}
+      </ul>
+    </section>
   );
 }
