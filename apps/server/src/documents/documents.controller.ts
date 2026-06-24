@@ -9,11 +9,11 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsEmail, IsIn, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { CurrentUser, type AuthUser } from '../auth/current-user.decorator.js';
 import { DocumentsService } from './documents.service.js';
-import type { Prisma } from '@prisma/client';
+import type { Prisma, DocumentRole } from '@prisma/client';
 
 class CreateDocumentDto {
   @IsOptional()
@@ -31,6 +31,28 @@ class UpdateDocumentDto {
   @IsOptional()
   @IsObject()
   content?: Prisma.InputJsonValue;
+}
+
+class CreateVersionDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  label?: string;
+}
+
+const MEMBER_ROLES: DocumentRole[] = ['EDITOR', 'COMMENTER', 'VIEWER'];
+
+class AddMemberDto {
+  @IsEmail()
+  email!: string;
+
+  @IsIn(MEMBER_ROLES)
+  role!: DocumentRole;
+}
+
+class UpdateMemberDto {
+  @IsIn(MEMBER_ROLES)
+  role!: DocumentRole;
 }
 
 @UseGuards(JwtAuthGuard)
@@ -61,5 +83,61 @@ export class DocumentsController {
   @Delete(':id')
   remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.docs.remove(user.id, id);
+  }
+
+  // ---------- versions ----------
+
+  @Get(':id/versions')
+  listVersions(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.docs.listVersions(user.id, id);
+  }
+
+  @Post(':id/versions')
+  createVersion(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: CreateVersionDto
+  ) {
+    return this.docs.createVersion(user.id, id, dto.label);
+  }
+
+  @Post(':id/versions/:versionId/restore')
+  restoreVersion(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('versionId') versionId: string
+  ) {
+    return this.docs.restoreVersion(user.id, id, versionId);
+  }
+
+  // ---------- members ----------
+
+  @Get(':id/members')
+  listMembers(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.docs.listMembers(user.id, id);
+  }
+
+  @Post(':id/members')
+  addMember(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: AddMemberDto) {
+    return this.docs.addMember(user.id, id, dto.email, dto.role);
+  }
+
+  @Patch(':id/members/:userId')
+  updateMember(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('userId') targetUserId: string,
+    @Body() dto: UpdateMemberDto
+  ) {
+    return this.docs.updateMemberRole(user.id, id, targetUserId, dto.role);
+  }
+
+  @Delete(':id/members/:userId')
+  removeMember(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('userId') targetUserId: string
+  ) {
+    return this.docs.removeMember(user.id, id, targetUserId);
   }
 }

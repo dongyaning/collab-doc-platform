@@ -33,7 +33,8 @@ export function LoginPage() {
     <main style={{ maxWidth: 360, margin: '80px auto', fontFamily: 'system-ui' }}>
       <h1>Sign in</h1>
       <p style={{ color: '#666', fontSize: 14 }}>
-        Use the seeded account: <code>demo@collab.dev / demo1234</code>
+        Seeded accounts: <code>demo@collab.dev / demo1234</code> or{' '}
+        <code>reviewer@collab.dev / reviewer1234</code>
       </p>
       <form onSubmit={onSubmit} style={{ display: 'grid', gap: 12, marginTop: 24 }}>
         <label>
