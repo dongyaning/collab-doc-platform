@@ -101,13 +101,13 @@ export class DocumentsController {
     return this.docs.createVersion(user.id, id, dto.label);
   }
 
-  @Post(':id/versions/:versionId/restore')
-  restoreVersion(
+  @Get(':id/versions/:versionId')
+  getVersion(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
     @Param('versionId') versionId: string
   ) {
-    return this.docs.restoreVersion(user.id, id, versionId);
+    return this.docs.getVersion(user.id, id, versionId);
   }
 
   // ---------- members ----------

@@ -5,6 +5,7 @@ import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Collaboration from '@tiptap/extension-collaboration';
 import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
+import type { JSONContent } from '@tiptap/react';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import {
@@ -13,6 +14,7 @@ import {
   type DocumentMembersResponse,
   type DocumentRole,
   type DocumentVersion,
+  type DocumentVersionDetail,
 } from '../lib/endpoints';
 import { useAuthStore } from '../stores/auth.store';
 
@@ -67,6 +69,7 @@ export function DocumentEditorPage() {
   });
 
   // ---- Yjs doc + provider (one per docId) ----
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- recreate the doc when switching documents
   const ydoc = useMemo(() => new Y.Doc(), [id]);
   const [provider, setProvider] = useState<WebsocketProvider | null>(null);
   const [connState, setConnState] = useState<ConnState>('connecting');
@@ -189,11 +192,12 @@ export function DocumentEditorPage() {
     }
   }
 
-  async function onRestore(versionId: string) {
-    if (!window.confirm('Restore this version? Current edits will be merged with it.')) return;
-    await documentsApi.restoreVersion(id, versionId);
-    await queryClient.invalidateQueries({ queryKey: ['document-versions', id] });
-  }
+  const [previewVersionId, setPreviewVersionId] = useState<string | null>(null);
+  const versionPreviewQuery = useQuery<DocumentVersionDetail>({
+    queryKey: ['document-version', id, previewVersionId],
+    queryFn: () => documentsApi.getVersion(id, previewVersionId!),
+    enabled: !!id && !!previewVersionId,
+  });
 
   if (isLoading) return <main style={{ padding: 24 }}>Loading…</main>;
   if (isError || !data)
@@ -295,11 +299,19 @@ export function DocumentEditorPage() {
             <VersionsPanel
               loading={versionsQuery.isLoading}
               versions={versionsQuery.data ?? []}
-              onRestore={isOwner ? onRestore : undefined}
+              selectedId={previewVersionId}
+              onSelect={setPreviewVersionId}
             />
           ) : null}
         </div>
       </div>
+      {previewVersionId ? (
+        <VersionPreviewModal
+          loading={versionPreviewQuery.isLoading}
+          version={versionPreviewQuery.data}
+          onClose={() => setPreviewVersionId(null)}
+        />
+      ) : null}
     </main>
   );
 }
@@ -461,11 +473,13 @@ function SharePanel({
 function VersionsPanel({
   loading,
   versions,
-  onRestore,
+  selectedId,
+  onSelect,
 }: {
   loading: boolean;
   versions: DocumentVersion[];
-  onRestore?: (id: string) => void;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
 }) {
   return (
     <aside
@@ -505,14 +519,95 @@ function VersionsPanel({
                   {new Date(v.createdAt).toLocaleString()}
                 </div>
               </div>
-              <button onClick={() => onRestore?.(v.id)} disabled={!onRestore}>
-                Restore
+              <button onClick={() => onSelect(v.id)} disabled={selectedId === v.id}>
+                {selectedId === v.id ? 'Viewing' : 'View'}
               </button>
             </li>
           ))}
         </ul>
       )}
     </aside>
+  );
+}
+
+function VersionPreviewModal({
+  loading,
+  version,
+  onClose,
+}: {
+  loading: boolean;
+  version: DocumentVersionDetail | undefined;
+  onClose: () => void;
+}) {
+  const previewEditor = useEditor(
+    {
+      editable: false,
+      content: (version?.content ?? { type: 'doc', content: [] }) as JSONContent,
+      extensions: [StarterKit],
+    },
+    [version?.id]
+  );
+
+  useEffect(() => {
+    if (version && previewEditor) {
+      previewEditor.commands.setContent(version.content as JSONContent);
+    }
+  }, [previewEditor, version]);
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.32)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 24,
+        zIndex: 20,
+      }}
+    >
+      <section
+        style={{
+          width: 'min(760px, 100%)',
+          maxHeight: '80vh',
+          overflow: 'auto',
+          background: 'white',
+          borderRadius: 8,
+          padding: 16,
+          boxShadow: '0 12px 40px rgba(0,0,0,0.18)',
+        }}
+      >
+        <header
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 12,
+            marginBottom: 12,
+          }}
+        >
+          <div>
+            <div style={{ fontWeight: 600 }}>Version preview</div>
+            {version ? (
+              <div style={{ color: '#777', fontSize: 12 }}>
+                v{version.version}
+                {version.label ? ` · ${version.label}` : ''} ·{' '}
+                {new Date(version.createdAt).toLocaleString()}
+              </div>
+            ) : null}
+          </div>
+          <button onClick={onClose}>Close</button>
+        </header>
+        {loading ? (
+          <div style={{ color: '#888' }}>Loading…</div>
+        ) : (
+          <div style={{ border: '1px solid #eee', borderRadius: 6, padding: 16, minHeight: 240 }}>
+            <EditorContent editor={previewEditor} />
+          </div>
+        )}
+      </section>
+    </div>
   );
 }
 

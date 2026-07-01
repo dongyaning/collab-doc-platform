@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import * as Y from 'yjs';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
@@ -7,6 +7,7 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import type { WebSocket } from 'ws';
 import { PrismaService } from '../prisma/prisma.module.js';
 import { Room } from './room.js';
+import type { DocumentRole } from '@prisma/client';
 
 const MESSAGE_SYNC = 0;
 const MESSAGE_AWARENESS = 1;
@@ -15,6 +16,16 @@ const PERSIST_DEBOUNCE_MS = 2000;
 const PERSIST_MAX_UPDATES = 50;
 const SNAPSHOT_EVERY_UPDATES = 50;
 const SNAPSHOT_MAX_INTERVAL_MS = 30 * 60 * 1000;
+const TIPTAP_FRAGMENT_NAME = 'default';
+const SYNC_STEP1 = 0;
+
+/** Yjs XML attributes are always strings; coerce numeric-looking ones back for Tiptap JSON. */
+function coerceAttr(value: string): unknown {
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  if (value !== '' && !Number.isNaN(Number(value))) return Number(value);
+  return value;
+}
 
 /**
  * Owns the in-memory `Room` map and orchestrates the y-protocol message flow.
@@ -59,11 +70,9 @@ export class RoomManager {
     }
     if (doc.yjsState && doc.yjsState.length > 0) {
       Y.applyUpdate(room.ydoc, new Uint8Array(doc.yjsState));
+    } else {
+      this.seedLegacyContent(room, doc.content);
     }
-    // M1 docs only have `content` (Tiptap JSON). We deliberately do NOT
-    // import that into the Y.Doc here — the prosemirror schema lives on the
-    // client. The first connecting client is responsible for seeding the
-    // shared XmlFragment from its initial editor content if yjsState is empty.
     room.loaded = true;
   }
 
@@ -112,11 +121,12 @@ export class RoomManager {
   }
 
   /** Add a websocket to a room and send the y-protocol handshake. */
-  async addConnection(room: Room, ws: WebSocket): Promise<void> {
-    room.addConn(ws);
+  async addConnection(room: Room, ws: WebSocket, role: DocumentRole): Promise<void> {
+    room.addConn(ws, role);
 
-    // 1. send sync step1 — server asks the client what state vector it has
-    {
+    // 1. Editors can sync their local state into the room. Read-only clients
+    // receive state through their own initial sync step1 instead.
+    if (role === 'OWNER' || role === 'EDITOR') {
       const enc = encoding.createEncoder();
       encoding.writeVarUint(enc, MESSAGE_SYNC);
       syncProtocol.writeSyncStep1(enc, room.ydoc);
@@ -143,10 +153,15 @@ export class RoomManager {
       const messageType = decoding.readVarUint(decoder);
       switch (messageType) {
         case MESSAGE_SYNC: {
+          if (!this.canApplySyncMessage(room, ws, data)) {
+            this.log.warn(`blocked read-only sync update in room ${room.docId}`);
+            ws.close(1008, 'read-only role cannot edit this document');
+            break;
+          }
           encoding.writeVarUint(encoder, MESSAGE_SYNC);
           syncProtocol.readSyncMessage(decoder, encoder, room.ydoc, ws);
           // readSyncMessage writes a reply (step2 / update ack) into encoder.
-          // length === 1 means "only the type byte" → no reply needed.
+          // length === 1 means "only the type byte" -> no reply needed.
           if (encoding.length(encoder) > 1) {
             this.send(ws, encoding.toUint8Array(encoder));
           }
@@ -166,6 +181,72 @@ export class RoomManager {
     } catch (err) {
       this.log.error(`error handling message in room ${room.docId}`, err as Error);
     }
+  }
+
+  private canApplySyncMessage(room: Room, ws: WebSocket, data: Uint8Array): boolean {
+    const role = room.roles.get(ws);
+    if (role === 'OWNER' || role === 'EDITOR') return true;
+
+    const decoder = decoding.createDecoder(data);
+    const messageType = decoding.readVarUint(decoder);
+    if (messageType !== MESSAGE_SYNC) return true;
+    const syncType = decoding.readVarUint(decoder);
+    return syncType === SYNC_STEP1;
+  }
+
+  private seedLegacyContent(room: Room, content: unknown): void {
+    const root = this.toYXmlChildren(content);
+    if (root.length === 0) return;
+    room.ydoc.transact(() => {
+      const fragment = room.ydoc.getXmlFragment(TIPTAP_FRAGMENT_NAME);
+      if (fragment.length === 0) {
+        fragment.insert(0, root);
+      }
+    }, 'legacy-content');
+  }
+
+  private toYXmlChildren(node: unknown): Array<Y.XmlElement | Y.XmlText> {
+    if (!node || typeof node !== 'object') return [];
+    const typed = node as {
+      type?: unknown;
+      text?: unknown;
+      attrs?: unknown;
+      content?: unknown;
+      marks?: unknown;
+    };
+    if (typed.type === 'doc') {
+      return Array.isArray(typed.content)
+        ? typed.content.flatMap((child) => this.toYXmlChildren(child))
+        : [];
+    }
+    if (typed.type === 'text') {
+      if (typeof typed.text !== 'string' || typed.text.length === 0) return [];
+      const text = new Y.XmlText();
+      text.insert(0, typed.text);
+      if (Array.isArray(typed.marks)) {
+        for (const mark of typed.marks) {
+          const m = mark as { type?: unknown; attrs?: Record<string, unknown> };
+          if (typeof m.type === 'string') {
+            text.format(0, typed.text.length, { [m.type]: m.attrs ?? true });
+          }
+        }
+      }
+      return [text];
+    }
+    if (typeof typed.type !== 'string') return [];
+    const element = new Y.XmlElement(typed.type);
+    if (typed.attrs && typeof typed.attrs === 'object') {
+      for (const [key, value] of Object.entries(typed.attrs)) {
+        if (value !== null && value !== undefined) element.setAttribute(key, String(value));
+      }
+    }
+    const children = Array.isArray(typed.content)
+      ? typed.content.flatMap((child) => this.toYXmlChildren(child))
+      : [];
+    if (children.length > 0) {
+      element.insert(0, children);
+    }
+    return [element];
   }
 
   /** Drop a connection from its room; if empty, persist + free the room. */
@@ -291,56 +372,62 @@ export class RoomManager {
     return created;
   }
 
-  /**
-   * Roll the document back to a saved version. If the room is live, we
-   * apply the diff to the in-memory Y.Doc so all clients see the rollback
-   * via the standard update broadcast; otherwise we just rewrite PG.
-   */
-  async restoreVersion(docId: string, userId: string, versionId: string): Promise<void> {
+  async getVersionSnapshot(docId: string, versionId: string) {
     const target = await this.prisma.documentVersion.findFirst({
       where: { id: versionId, documentId: docId },
-      select: { yjsState: true },
+      select: {
+        id: true,
+        version: true,
+        label: true,
+        createdById: true,
+        createdAt: true,
+        yjsState: true,
+      },
     });
-    if (!target) throw new Error('version not found');
-    const targetState = new Uint8Array(target.yjsState);
-
-    const room = this.rooms.get(docId);
-    if (room) {
-      // Compute the diff from current state to target and apply it.
-      // Apply target update directly: Y.applyUpdate will merge the structure.
-      // Note: CRDT merge means clients keep any concurrent local edits; for
-      // a strict rollback we'd need to swap the Y.Doc instance. For M2 this
-      // "merge-style restore" is acceptable.
-      Y.applyUpdate(room.ydoc, targetState, 'restore');
-      // Mark the snapshot as a manual entry for audit.
-      await this.prisma.documentVersion.create({
-        data: {
-          documentId: docId,
-          version: 0, // version is bumped on next persist
-          yjsState: Buffer.from(Y.encodeStateAsUpdate(room.ydoc)),
-          createdById: userId,
-          label: `restore:${versionId}`,
-        },
-      });
-    } else {
-      const updated = await this.prisma.document.update({
-        where: { id: docId },
-        data: { yjsState: Buffer.from(targetState), version: { increment: 1 } },
-        select: { version: true },
-      });
-      await this.prisma.documentVersion.create({
-        data: {
-          documentId: docId,
-          version: updated.version,
-          yjsState: Buffer.from(targetState),
-          createdById: userId,
-          label: `restore:${versionId}`,
-        },
-      });
-    }
+    if (!target) throw new NotFoundException('version not found');
+    const ydoc = new Y.Doc();
+    Y.applyUpdate(ydoc, new Uint8Array(target.yjsState));
+    const content = this.fromYXmlFragment(ydoc.getXmlFragment(TIPTAP_FRAGMENT_NAME));
+    ydoc.destroy();
+    return {
+      id: target.id,
+      version: target.version,
+      label: target.label,
+      createdById: target.createdById,
+      createdAt: target.createdAt,
+      content,
+    };
   }
 
   // ---------- helpers ----------
+
+  private fromYXmlFragment(fragment: Y.XmlFragment) {
+    return {
+      type: 'doc',
+      content: fragment.toArray().flatMap((child) => this.fromYXmlNode(child)),
+    };
+  }
+
+  private fromYXmlNode(node: Y.XmlElement | Y.XmlText | Y.XmlHook): unknown[] {
+    if (node instanceof Y.XmlText) {
+      return [{ type: 'text', text: node.toString() }];
+    }
+    if (!(node instanceof Y.XmlElement)) return [];
+    const rawAttrs = node.getAttributes();
+    const attrs: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(rawAttrs)) {
+      if (value === undefined) continue;
+      attrs[key] = coerceAttr(value);
+    }
+    const children = node.toArray().flatMap((child) => this.fromYXmlNode(child));
+    return [
+      {
+        type: node.nodeName,
+        ...(Object.keys(attrs).length > 0 ? { attrs } : {}),
+        ...(children.length > 0 ? { content: children } : {}),
+      },
+    ];
+  }
 
   private send(ws: WebSocket, data: Uint8Array): void {
     if (ws.readyState !== ws.OPEN) return;

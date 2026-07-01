@@ -29,6 +29,10 @@ export interface DocumentVersion {
   createdAt: string;
 }
 
+export interface DocumentVersionDetail extends DocumentVersion {
+  content: unknown;
+}
+
 export interface DocumentMember {
   userId: string;
   email: string;
@@ -55,10 +59,8 @@ export const documentsApi = {
     api
       .post<{ id: string; version: number }>(`/documents/${id}/versions`, { label })
       .then((r) => r.data),
-  restoreVersion: (id: string, versionId: string) =>
-    api
-      .post<{ ok: true }>(`/documents/${id}/versions/${versionId}/restore`, {})
-      .then((r) => r.data),
+  getVersion: (id: string, versionId: string) =>
+    api.get<DocumentVersionDetail>(`/documents/${id}/versions/${versionId}`).then((r) => r.data),
   listMembers: (id: string) =>
     api.get<DocumentMembersResponse>(`/documents/${id}/members`).then((r) => r.data),
   addMember: (id: string, email: string, role: Exclude<DocumentRole, 'OWNER'>) =>

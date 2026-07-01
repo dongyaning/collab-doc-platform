@@ -1,5 +1,6 @@
 import * as Y from 'yjs';
 import { Awareness, removeAwarenessStates } from 'y-protocols/awareness';
+import type { DocumentRole } from '@prisma/client';
 import type { WebSocket } from 'ws';
 
 /**
@@ -13,6 +14,7 @@ export class Room {
   readonly ydoc = new Y.Doc({ gc: true });
   readonly awareness = new Awareness(this.ydoc);
   readonly conns = new Map<WebSocket, Set<number>>(); // ws -> set of awareness clientIds it owns
+  readonly roles = new Map<WebSocket, DocumentRole>();
 
   /** Set to true once initial state has been loaded from storage. */
   loaded = false;
@@ -35,8 +37,9 @@ export class Room {
     this.awareness.setLocalState(null);
   }
 
-  addConn(ws: WebSocket): void {
+  addConn(ws: WebSocket, role: DocumentRole): void {
     this.conns.set(ws, new Set());
+    this.roles.set(ws, role);
   }
 
   removeConn(ws: WebSocket): void {
@@ -45,6 +48,7 @@ export class Room {
       removeAwarenessStates(this.awareness, Array.from(controlled), null);
     }
     this.conns.delete(ws);
+    this.roles.delete(ws);
   }
 
   isEmpty(): boolean {

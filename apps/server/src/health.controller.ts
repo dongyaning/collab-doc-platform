@@ -5,6 +5,6 @@ import { PROJECT_NAME } from '@collab/shared';
 export class HealthController {
   @Get()
   health() {
-    return { project: PROJECT_NAME, milestone: 'M1', ok: true };
+    return { project: PROJECT_NAME, milestone: 'M2', ok: true };
   }
 }

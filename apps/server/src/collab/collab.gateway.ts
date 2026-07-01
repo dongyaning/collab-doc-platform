@@ -5,12 +5,14 @@ import type { IncomingMessage } from 'http';
 import { URL } from 'url';
 import { PrismaService } from '../prisma/prisma.module.js';
 import { RoomManager } from './room-manager.js';
+import type { DocumentRole } from '@prisma/client';
 
 const PING_INTERVAL_MS = 25_000;
 
 interface AuthInfo {
   userId: string;
   docId: string;
+  role: DocumentRole;
 }
 
 interface CollabSocket extends WebSocket {
@@ -118,10 +120,9 @@ export class CollabGateway implements OnModuleDestroy {
         },
       });
       if (!doc) return null;
-      // Allow the owner or any member with at least VIEWER access. Write
-      // permission is enforced again at the y-protocol level if needed.
-      if (doc.ownerId !== userId && doc.members.length === 0) return null;
-      return { userId, docId };
+      const role = doc.ownerId === userId ? 'OWNER' : doc.members[0]?.role;
+      if (!role) return null;
+      return { userId, docId, role };
     } catch {
       return null;
     }
@@ -129,7 +130,7 @@ export class CollabGateway implements OnModuleDestroy {
 
   private async handleConnection(ws: CollabSocket, auth: AuthInfo): Promise<void> {
     const room = await this.rooms.getOrCreateRoom(auth.docId);
-    await this.rooms.addConnection(room, ws);
+    await this.rooms.addConnection(room, ws, auth.role);
 
     ws.on('message', (data: Buffer) => {
       this.rooms.handleMessage(room, ws, new Uint8Array(data));

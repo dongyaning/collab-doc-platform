@@ -111,10 +111,9 @@ export class DocumentsService {
     return this.rooms.createManualSnapshot(docId, userId, label);
   }
 
-  async restoreVersion(userId: string, docId: string, versionId: string) {
-    await this.requireRole(userId, docId, 'OWNER');
-    await this.rooms.restoreVersion(docId, userId, versionId);
-    return { ok: true };
+  async getVersion(userId: string, docId: string, versionId: string) {
+    await this.requireRole(userId, docId, 'VIEWER');
+    return this.rooms.getVersionSnapshot(docId, versionId);
   }
 
   // ---------- members ----------

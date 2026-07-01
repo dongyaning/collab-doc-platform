@@ -10,7 +10,7 @@
 > - Mini Builder：`mini-builder-design.md`
 > - 协作协议：`collab-protocol.md`
 
-当前里程碑：**M1 — 文档业务 MVP（单人）**。
+当前里程碑：**M2 — 实时协作（收尾打磨中）**。
 
 ## 仓库结构
 
