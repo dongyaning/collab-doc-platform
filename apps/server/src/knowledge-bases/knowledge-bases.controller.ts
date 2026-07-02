@@ -1,8 +1,19 @@
-import { Body, Controller, Delete, Get, Inject, Param, Post, UseGuards } from '@nestjs/common';
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Inject,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
+import { IsEmail, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { CurrentUser, type AuthUser } from '../auth/current-user.decorator.js';
 import { KnowledgeBasesService } from './knowledge-bases.service.js';
+import type { DocumentRole } from '@prisma/client';
 
 class CreateKbDto {
   @IsOptional()
@@ -14,6 +25,21 @@ class CreateKbDto {
   @IsString()
   @MaxLength(500)
   description?: string;
+}
+
+const MEMBER_ROLES: DocumentRole[] = ['EDITOR', 'COMMENTER', 'VIEWER'];
+
+class AddKbMemberDto {
+  @IsEmail()
+  email!: string;
+
+  @IsIn(MEMBER_ROLES)
+  role!: DocumentRole;
+}
+
+class UpdateKbMemberDto {
+  @IsIn(MEMBER_ROLES)
+  role!: DocumentRole;
 }
 
 @UseGuards(JwtAuthGuard)
@@ -42,5 +68,36 @@ export class KnowledgeBasesController {
   @Delete(':id')
   remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.kbs.remove(user.id, id);
+  }
+
+  // ---------- members ----------
+
+  @Get(':id/members')
+  listMembers(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.kbs.listMembers(user.id, id);
+  }
+
+  @Post(':id/members')
+  addMember(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: AddKbMemberDto) {
+    return this.kbs.addMember(user.id, id, dto.email, dto.role);
+  }
+
+  @Patch(':id/members/:userId')
+  updateMember(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('userId') targetUserId: string,
+    @Body() dto: UpdateKbMemberDto
+  ) {
+    return this.kbs.updateMemberRole(user.id, id, targetUserId, dto.role);
+  }
+
+  @Delete(':id/members/:userId')
+  removeMember(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('userId') targetUserId: string
+  ) {
+    return this.kbs.removeMember(user.id, id, targetUserId);
   }
 }

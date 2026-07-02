@@ -101,6 +101,87 @@ export class KnowledgeBasesService {
     return { ok: true };
   }
 
+  // ---------- members ----------
+
+  async listMembers(userId: string, kbId: string) {
+    await this.requireRole(userId, kbId, 'VIEWER');
+    const kb = await this.prisma.knowledgeBase.findUnique({
+      where: { id: kbId },
+      select: {
+        ownerId: true,
+        owner: { select: { id: true, email: true, name: true } },
+        members: {
+          select: {
+            role: true,
+            createdAt: true,
+            user: { select: { id: true, email: true, name: true } },
+          },
+        },
+      },
+    });
+    if (!kb) throw new NotFoundException();
+    return {
+      owner: kb.owner,
+      members: kb.members.map((m) => ({
+        userId: m.user.id,
+        email: m.user.email,
+        name: m.user.name,
+        role: m.role,
+        createdAt: m.createdAt,
+      })),
+    };
+  }
+
+  async addMember(userId: string, kbId: string, email: string, role: DocumentRole) {
+    await this.requireRole(userId, kbId, 'OWNER');
+    if (role === 'OWNER') {
+      throw new ForbiddenException('cannot grant OWNER role');
+    }
+    const invitee = await this.prisma.user.findUnique({
+      where: { email },
+      select: { id: true, email: true, name: true },
+    });
+    if (!invitee) throw new NotFoundException(`no user with email ${email}`);
+
+    const kb = await this.prisma.knowledgeBase.findUnique({
+      where: { id: kbId },
+      select: { ownerId: true },
+    });
+    if (kb?.ownerId === invitee.id) {
+      throw new ForbiddenException('user is already the owner');
+    }
+
+    await this.prisma.kbMember.upsert({
+      where: { kbId_userId: { kbId, userId: invitee.id } },
+      update: { role },
+      create: { kbId, userId: invitee.id, role },
+    });
+    return { userId: invitee.id, email: invitee.email, name: invitee.name, role };
+  }
+
+  async updateMemberRole(userId: string, kbId: string, targetUserId: string, role: DocumentRole) {
+    await this.requireRole(userId, kbId, 'OWNER');
+    if (role === 'OWNER') {
+      throw new ForbiddenException('cannot grant OWNER role');
+    }
+    await this.prisma.kbMember.update({
+      where: { kbId_userId: { kbId, userId: targetUserId } },
+      data: { role },
+    });
+    return { ok: true };
+  }
+
+  async removeMember(userId: string, kbId: string, targetUserId: string) {
+    await this.requireRole(userId, kbId, 'OWNER');
+    if (userId === targetUserId) {
+      throw new ForbiddenException('owner cannot remove themselves');
+    }
+    await this.prisma.kbMember.delete({
+      where: { kbId_userId: { kbId, userId: targetUserId } },
+    });
+    return { ok: true };
+  }
+
   // ---------- access helpers ----------
 
   async getEffectiveRole(userId: string, kbId: string): Promise<EffectiveRole | null> {
