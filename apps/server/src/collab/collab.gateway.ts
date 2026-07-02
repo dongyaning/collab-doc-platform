@@ -13,6 +13,7 @@ interface AuthInfo {
   userId: string;
   docId: string;
   role: DocumentRole;
+  entityType: 'document' | 'node';
 }
 
 interface CollabSocket extends WebSocket {
@@ -123,7 +124,7 @@ export class CollabGateway implements OnModuleDestroy {
       if (doc) {
         const role = doc.ownerId === userId ? 'OWNER' : doc.members[0]?.role;
         if (!role) return null;
-        return { userId, docId, role };
+        return { userId, docId, role, entityType: 'document' };
       }
 
       // Try Node — check KB-level membership
@@ -142,14 +143,14 @@ export class CollabGateway implements OnModuleDestroy {
       const kb = node.kb;
       const role = kb.ownerId === userId ? 'OWNER' : kb.members[0]?.role;
       if (!role) return null;
-      return { userId, docId, role };
+      return { userId, docId, role, entityType: 'node' };
     } catch {
       return null;
     }
   }
 
   private async handleConnection(ws: CollabSocket, auth: AuthInfo): Promise<void> {
-    const room = await this.rooms.getOrCreateRoom(auth.docId);
+    const room = await this.rooms.getOrCreateRoom(auth.docId, auth.entityType);
     await this.rooms.addConnection(room, ws, auth.role);
 
     ws.on('message', (data: Buffer) => {

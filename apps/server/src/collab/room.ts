@@ -16,6 +16,9 @@ export class Room {
   readonly conns = new Map<WebSocket, Set<number>>(); // ws -> set of awareness clientIds it owns
   readonly roles = new Map<WebSocket, DocumentRole>();
 
+  /** Whether the full document content lives in the Document or Node table. */
+  readonly entityType: 'document' | 'node';
+
   /** Set to true once initial state has been loaded from storage. */
   loaded = false;
 
@@ -31,7 +34,11 @@ export class Room {
   /** Last time an automatic snapshot was written (ms epoch). */
   lastSnapshotAt = 0;
 
-  constructor(readonly docId: string) {
+  constructor(
+    readonly docId: string,
+    entityType: 'document' | 'node'
+  ) {
+    this.entityType = entityType;
     // Awareness clients should not include the local Y.Doc client by default
     // (the server is not a "user").
     this.awareness.setLocalState(null);
