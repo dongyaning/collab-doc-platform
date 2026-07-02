@@ -179,15 +179,7 @@ export function KnowledgeBaseViewPage() {
     },
   });
 
-  // ---- drag & drop move ----
-  const moveMutation = useMutation({
-    mutationFn: (data: { id: string; parentId: string | null; index: number }) =>
-      nodesApi.move(data.id, { parentId: data.parentId, index: data.index }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['kb-tree', kbId] });
-    },
-  });
-
+  // ---- create node ----
   function onCreateChild(parentId: string | null) {
     modal.confirm({
       title: parentId ? 'New document in folder' : 'New document',
