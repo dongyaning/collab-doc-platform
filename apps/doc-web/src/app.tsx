@@ -6,7 +6,7 @@ import { DocumentListPage } from './pages/document-list';
 import { DocumentEditorPage } from './pages/document-editor';
 import { KnowledgeBaseListPage } from './pages/knowledge-base-list';
 import { KnowledgeBaseViewPage } from './pages/knowledge-base-view';
-import { RequireAuth } from './pages/require-auth';
+import { AppLayout } from './pages/app-layout';
 import { themeTokens } from './styles/tokens';
 
 const queryClient = new QueryClient({
@@ -28,7 +28,7 @@ export function App() {
           <BrowserRouter>
             <Routes>
               <Route path="/login" element={<LoginPage />} />
-              <Route element={<RequireAuth />}>
+              <Route element={<AppLayout />}>
                 <Route path="/documents" element={<DocumentListPage />} />
                 <Route path="/documents/:id" element={<DocumentEditorPage />} />
                 <Route path="/kb" element={<KnowledgeBaseListPage />} />

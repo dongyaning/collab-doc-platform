@@ -9,25 +9,21 @@ import {
   List,
   Modal,
   Popconfirm,
-  Space,
   Spin,
   Tag,
   Typography,
 } from 'antd';
-import { DeleteOutlined, LogoutOutlined, PlusOutlined, TeamOutlined } from '@ant-design/icons';
+import { DeleteOutlined, PlusOutlined, TeamOutlined } from '@ant-design/icons';
 import { knowledgeBasesApi } from '../../lib/endpoints';
-import { useAuthStore } from '../../stores/auth.store';
 import type { KnowledgeBaseSummary } from '@collab/shared';
 import styles from './index.module.less';
 
-const { Header, Content } = Layout;
-const { Title, Text } = Typography;
+const { Content } = Layout;
+const { Text } = Typography;
 
 export function KnowledgeBaseListPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const user = useAuthStore((s) => s.user);
-  const logout = useAuthStore((s) => s.logout);
 
   const { data, isLoading } = useQuery({
     queryKey: ['knowledge-bases'],
@@ -82,20 +78,6 @@ export function KnowledgeBaseListPage() {
 
   return (
     <Layout className={styles.layout}>
-      <Header className={styles.header}>
-        <Space>
-          <TeamOutlined className={styles.brandIcon} />
-          <Title level={4} className={styles.title}>
-            Knowledge Bases
-          </Title>
-        </Space>
-        <Space>
-          <Text type="secondary">{user?.email}</Text>
-          <Button icon={<LogoutOutlined />} onClick={logout}>
-            Sign out
-          </Button>
-        </Space>
-      </Header>
       <Content className={styles.content}>
         <div className={styles.contentInner}>
           <Button
