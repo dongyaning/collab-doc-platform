@@ -17,6 +17,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "pnpm -r run test",
+    "check:theme": "bash scripts/check-theme.sh",
     "prepare": "husky"
   },
   "devDependencies": {
@@ -40,6 +41,9 @@
     "vitest": "^2.1.2"
   },
   "lint-staged": {
+    "apps/doc-web/src/styles/tokens.ts": [
+      "pnpm check:theme"
+    ],
     "*.{ts,tsx,js,jsx,mjs,cjs}": [
       "eslint --fix",
       "prettier --write"

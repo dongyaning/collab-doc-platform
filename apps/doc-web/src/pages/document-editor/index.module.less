@@ -1,0 +1,238 @@
+.page {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 24px 24px 96px;
+}
+
+.loading {
+  margin-top: 96px;
+  text-align: center;
+}
+
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+
+.paper {
+  position: relative;
+  background: @color-editor-bg;
+  border: 1px solid @color-border;
+  border-radius: @radius-lg;
+  box-shadow: @shadow-elevated;
+  padding: 56px 72px;
+
+  .updateTime {
+    position: absolute;
+    top: 5px;
+    right: 15px;
+    color: #bbb;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  &:hover .updateTime {
+    opacity: 1;
+  }
+
+  &:hover .updateTime {
+    visibility: visible;
+  }
+}
+
+.titleInput:global(.ant-input) {
+  margin-bottom: 8px;
+  padding: 0;
+  border: none;
+  color: @color-text-primary;
+  font-size: @font-size-title;
+  font-weight: 700;
+  line-height: 1.2;
+  box-shadow: none;
+}
+
+.titleInput:global(.ant-input)::placeholder {
+  color: @color-placeholder;
+  font-weight: 700;
+}
+
+.titleInput:global(.ant-input):focus {
+  box-shadow: none;
+}
+
+.editorSurface {
+  min-height: 420px;
+}
+
+.editorSurface :global(.ProseMirror) {
+  outline: none;
+  color: @color-text-secondary;
+  font-size: @font-size-editor;
+  line-height: 1.75;
+}
+
+.editorSurface :global(.ProseMirror > * + *) {
+  margin-top: 0.75em;
+}
+
+.editorSurface :global(.ProseMirror h1) {
+  margin-top: 1.4em;
+  font-size: 1.875em;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.editorSurface :global(.ProseMirror h2) {
+  margin-top: 1.2em;
+  font-size: 1.5em;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.editorSurface :global(.ProseMirror h3) {
+  margin-top: 1em;
+  font-size: 1.25em;
+  font-weight: 600;
+}
+
+.editorSurface :global(.ProseMirror ul),
+.editorSurface :global(.ProseMirror ol) {
+  padding-left: 1.4em;
+}
+
+.editorSurface :global(.ProseMirror li > p) {
+  margin: 0;
+}
+
+.editorSurface :global(.ProseMirror blockquote) {
+  margin-left: 0;
+  padding-left: 14px;
+  border-left: 3px solid #e3e3e0;
+  color: @gray-600;
+}
+
+.editorSurface :global(.ProseMirror pre) {
+  overflow-x: auto;
+  padding: 12px 16px;
+  border-radius: 6px;
+  background: #f7f6f3;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 0.9em;
+}
+
+.editorSurface :global(.ProseMirror code) {
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+  background: rgba(135, 131, 120, 0.15);
+  font-size: 0.9em;
+}
+
+.editorSurface :global(.ProseMirror pre code) {
+  padding: 0;
+  background: none;
+}
+
+.editorSurface :global(.ProseMirror hr) {
+  margin: 1.5em 0;
+  border: none;
+  border-top: 1px solid #ededec;
+}
+
+.editorSurface :global(.ProseMirror p.is-editor-empty:first-child::before) {
+  float: left;
+  height: 0;
+  color: @color-placeholder;
+  pointer-events: none;
+  content: attr(data-placeholder);
+}
+
+.editorSurface :global(.collaboration-cursor__caret) {
+  position: relative;
+  margin-right: -1px;
+  margin-left: -1px;
+  border-right: 1px solid #0d0d0d;
+  border-left: 1px solid #0d0d0d;
+  pointer-events: none;
+  word-break: normal;
+}
+
+.editorSurface :global(.collaboration-cursor__label) {
+  position: absolute;
+  top: -22px;
+  left: -8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
+  pointer-events: none;
+}
+
+.inviteInputGroup {
+  width: 100%;
+}
+
+.inviteRoleSelect {
+  width: 120px;
+}
+
+.roleSelect {
+  width: 110px;
+}
+
+.inlineError {
+  display: block;
+  margin-top: 8px;
+  font-size: @font-size-small;
+}
+
+.memberList {
+  margin-top: 16px;
+}
+
+.versionLoading {
+  margin-top: 24px;
+  text-align: center;
+}
+
+.versionTime {
+  font-size: @font-size-small;
+}
+
+.previewMeta {
+  font-size: @font-size-small;
+  font-weight: 400;
+}
+
+.previewLoading {
+  padding: 48px;
+  text-align: center;
+}
+
+.previewSurface {
+  max-height: 60vh;
+  min-height: 240px;
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid @color-border-light;
+  border-radius: @radius-base;
+}
+
+.previewSurface :global(.ProseMirror) {
+  outline: none;
+  color: @color-text-secondary;
+  font-size: 15px;
+  line-height: 1.7;
+}
