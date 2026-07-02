@@ -51,7 +51,7 @@ class MoveNodeDto {
   parentId?: string | null;
 
   @IsInt()
-  sortOrder!: number;
+  index!: number;
 }
 
 class CreateNodeVersionDto {
@@ -107,7 +107,7 @@ export class NodesController {
   move(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: MoveNodeDto) {
     return this.nodes.move(user.id, id, {
       parentId: dto.parentId ?? null,
-      sortOrder: dto.sortOrder,
+      index: dto.index,
     });
   }
 

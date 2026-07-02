@@ -124,7 +124,7 @@ export const nodesApi = {
     api.post<NodeDetail>('/nodes', data).then((r) => r.data),
   update: (id: string, patch: { title?: string; content?: unknown }) =>
     api.patch<NodeDetail>(`/nodes/${id}`, patch).then((r) => r.data),
-  move: (id: string, data: { parentId: string | null; sortOrder: number }) =>
+  move: (id: string, data: { parentId: string | null; index: number }) =>
     api.patch<{ ok: true }>(`/nodes/${id}/move`, data).then((r) => r.data),
   remove: (id: string) => api.delete<{ ok: true }>(`/nodes/${id}`).then((r) => r.data),
   listVersions: (id: string) =>

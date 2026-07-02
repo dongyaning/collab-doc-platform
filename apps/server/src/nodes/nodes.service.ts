@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.module.js';
 import { KnowledgeBasesService } from '../knowledge-bases/knowledge-bases.service.js';
 import type { Prisma, NodeType, DocumentRole } from '@prisma/client';
@@ -82,20 +82,61 @@ export class NodesService {
     });
   }
 
-  async move(userId: string, nodeId: string, data: { parentId: string | null; sortOrder: number }) {
+  async move(userId: string, nodeId: string, data: { parentId: string | null; index: number }) {
     const node = await this.prisma.node.findUnique({
       where: { id: nodeId },
     });
     if (!node) throw new NotFoundException();
     await this.kbs.requireRole(userId, node.kbId, 'EDITOR');
 
-    return this.prisma.node.update({
-      where: { id: nodeId },
-      data: {
-        parentId: data.parentId,
-        sortOrder: data.sortOrder,
-      },
+    const kbId = node.kbId;
+    const newParentId = data.parentId;
+
+    // prevent dropping a node into itself or its own descendant
+    if (newParentId === nodeId) {
+      throw new ForbiddenException('cannot move a node into itself');
+    }
+    if (newParentId) {
+      let cursor: string | null = newParentId;
+      while (cursor) {
+        const ancestor: { id: string; parentId: string | null } | null =
+          await this.prisma.node.findUnique({
+            where: { id: cursor },
+            select: { id: true, parentId: true },
+          });
+        if (!ancestor) break;
+        if (ancestor.id === nodeId) {
+          throw new ForbiddenException('cannot move a node into its own descendant');
+        }
+        cursor = ancestor.parentId;
+      }
+    }
+
+    // fetch destination siblings (excluding the moved node)
+    const siblings = await this.prisma.node.findMany({
+      where: { kbId, parentId: newParentId, id: { not: nodeId } },
+      orderBy: { sortOrder: 'asc' },
+      select: { id: true },
     });
+
+    const clampedIndex = Math.max(0, Math.min(data.index, siblings.length));
+    const orderedIds = [
+      ...siblings.slice(0, clampedIndex).map((s) => s.id),
+      nodeId,
+      ...siblings.slice(clampedIndex).map((s) => s.id),
+    ];
+
+    // reassign sortOrder for all siblings atomically
+    await this.prisma.$transaction(
+      orderedIds.map((id, i) =>
+        this.prisma.node.update({
+          where: { id },
+          data: { sortOrder: i, parentId: newParentId },
+        })
+      )
+    );
+
+    return this.prisma.node.findUnique({ where: { id: nodeId } });
   }
 
   async remove(userId: string, nodeId: string) {

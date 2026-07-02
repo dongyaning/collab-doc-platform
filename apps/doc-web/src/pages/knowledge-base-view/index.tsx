@@ -142,10 +142,47 @@ export function KnowledgeBaseViewPage() {
     }
   };
 
+  // ---- drag & drop move ----
+  const moveMutation = useMutation({
+    mutationFn: (data: { id: string; parentId: string | null; index: number }) =>
+      nodesApi.move(data.id, { parentId: data.parentId, index: data.index }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['kb-tree', kbId] });
+    },
+  });
+
+  const onDrop: TreeProps['onDrop'] = (info) => {
+    const dragKey = String(info.dragNode.key);
+    const dropKey = String(info.node.key);
+    const dropToGap = info.dropToGap;
+    const dropPosition = info.dropPosition;
+
+    // build a flat lookup from tree data to compute new parent + index
+    const tree = treeQuery.data?.nodes ?? [];
+    const { parentId, index } = computeDropTarget(tree, dragKey, dropKey, dropToGap, dropPosition);
+
+    // only folders (or root) can be drop targets when not dropping to gap
+    if (!dropToGap) {
+      const targetNode = findNode(tree, dropKey);
+      if (targetNode && targetNode.type !== 'FOLDER') return;
+    }
+
+    moveMutation.mutate({ id: dragKey, parentId, index });
+  };
+
   // ---- create node ----
   const createMutation = useMutation({
     mutationFn: (data: { title?: string; type?: string; parentId?: string | null }) =>
       nodesApi.create({ kbId: kbId!, ...data }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['kb-tree', kbId] });
+    },
+  });
+
+  // ---- drag & drop move ----
+  const moveMutation = useMutation({
+    mutationFn: (data: { id: string; parentId: string | null; index: number }) =>
+      nodesApi.move(data.id, { parentId: data.parentId, index: data.index }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['kb-tree', kbId] });
     },
@@ -335,6 +372,14 @@ export function KnowledgeBaseViewPage() {
     enabled: shareOpen && !!nodeId,
   });
 
+  // ---- KB-level members ----
+  const [kbShareOpen, setKbShareOpen] = useState(false);
+  const kbMembersQuery = useQuery<KbMemberResponse>({
+    queryKey: ['kb-members', kbId],
+    queryFn: () => knowledgeBasesApi.listMembers(kbId!),
+    enabled: kbShareOpen && !!kbId,
+  });
+
   function onSaveSnapshot() {
     let label = '';
     modal.confirm({
@@ -408,6 +453,15 @@ export function KnowledgeBaseViewPage() {
               {treeQuery.data.kb.title}
             </Text>
             <Space size={4}>
+              {isOwner ? (
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<TeamOutlined />}
+                  className={styles.addBtn}
+                  onClick={() => setKbShareOpen(true)}
+                />
+              ) : null}
               <Button
                 type="text"
                 size="small"
@@ -431,6 +485,9 @@ export function KnowledgeBaseViewPage() {
               defaultExpandAll
               selectedKeys={nodeId ? [nodeId] : []}
               showIcon
+              draggable
+              blockNode
+              onDrop={onDrop}
             />
           </div>
         </div>
@@ -508,6 +565,20 @@ export function KnowledgeBaseViewPage() {
                 docId={nodeId!}
                 data={membersQuery.data}
                 loading={membersQuery.isLoading}
+                currentUserId={user?.id ?? ''}
+              />
+            </Drawer>
+
+            <Drawer
+              title="Knowledge base members"
+              open={kbShareOpen}
+              onClose={() => setKbShareOpen(false)}
+              width={360}
+            >
+              <KbSharePanel
+                kbId={kbId!}
+                data={kbMembersQuery.data}
+                loading={kbMembersQuery.isLoading}
                 currentUserId={user?.id ?? ''}
               />
             </Drawer>
@@ -662,6 +733,157 @@ function SharePanel({
                           type="text"
                           danger
                           size="small"
+                          onClick={() => removeMutation.mutate(m.userId)}
+                        >
+                          ×
+                        </Button>,
+                      ]
+                }
+              >
+                <List.Item.Meta
+                  title={
+                    <span>
+                      {m.name}
+                      {m.userId === currentUserId ? ' (you)' : ''}
+                    </span>
+                  }
+                  description={<Text type="secondary">{m.email}</Text>}
+                />
+                {isOwnerRow ? <Tag color="blue">Owner</Tag> : null}
+              </List.Item>
+            );
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function KbSharePanel({
+  kbId,
+  data,
+  loading,
+  currentUserId,
+}: {
+  kbId: string;
+  data: KbMemberResponse | undefined;
+  loading: boolean;
+  currentUserId: string;
+}) {
+  const qc = useQueryClient();
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState<AssignableRole>('EDITOR');
+  const [error, setError] = useState<string | null>(null);
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['kb-members', kbId] });
+
+  const addMutation = useMutation({
+    mutationFn: () => knowledgeBasesApi.addMember(kbId, email.trim(), role),
+    onSuccess: async () => {
+      setEmail('');
+      setError(null);
+      await invalidate();
+    },
+    onError: (err: unknown) => {
+      const msg =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+        'Failed to add member';
+      setError(msg);
+    },
+  });
+  const updateMutation = useMutation({
+    mutationFn: ({ userId, role: r }: { userId: string; role: AssignableRole }) =>
+      knowledgeBasesApi.updateMemberRole(kbId, userId, r),
+    onSuccess: invalidate,
+  });
+  const removeMutation = useMutation({
+    mutationFn: (userId: string) => knowledgeBasesApi.removeMember(kbId, userId),
+    onSuccess: invalidate,
+  });
+
+  return (
+    <div>
+      <Space.Compact className={styles.inviteInputGroup}>
+        <Input
+          type="email"
+          placeholder="user@example.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          onPressEnter={() => {
+            if (email.trim()) addMutation.mutate();
+          }}
+        />
+        <Select<AssignableRole>
+          value={role}
+          onChange={setRole}
+          className={styles.inviteRoleSelect}
+          options={ASSIGNABLE_ROLES.map((r) => ({
+            value: r,
+            label: ROLE_LABEL[r],
+          }))}
+        />
+        <Button
+          type="primary"
+          loading={addMutation.isPending}
+          onClick={() => {
+            if (email.trim()) addMutation.mutate();
+          }}
+        >
+          Invite
+        </Button>
+      </Space.Compact>
+      {error ? (
+        <Text type="danger" className={styles.inlineError}>
+          {error}
+        </Text>
+      ) : null}
+
+      {loading ? (
+        <div className={styles.loading}>
+          <Spin />
+        </div>
+      ) : !data ? null : (
+        <List
+          className={styles.memberList}
+          dataSource={[
+            {
+              userId: data.owner.id,
+              name: data.owner.name,
+              email: data.owner.email,
+              role: 'OWNER' as const,
+            },
+            ...data.members,
+          ]}
+          locale={{ emptyText: 'No collaborators yet.' }}
+          renderItem={(m) => {
+            const isOwnerRow = m.role === 'OWNER';
+            return (
+              <List.Item
+                actions={
+                  isOwnerRow
+                    ? undefined
+                    : [
+                        <Select<AssignableRole>
+                          key="role"
+                          size="small"
+                          value={m.role as AssignableRole}
+                          className={styles.roleSelect}
+                          onChange={(r) =>
+                            updateMutation.mutate({
+                              userId: m.userId,
+                              role: r,
+                            })
+                          }
+                          options={ASSIGNABLE_ROLES.map((r) => ({
+                            value: r,
+                            label: ROLE_LABEL[r],
+                          }))}
+                        />,
+                        <Button
+                          key="remove"
+                          type="text"
+                          danger
+                          size="small"
+                          disabled={m.userId === currentUserId}
                           onClick={() => removeMutation.mutate(m.userId)}
                         >
                           ×
@@ -875,4 +1097,57 @@ function PeerList({
       ))}
     </Avatar.Group>
   );
+}
+
+// ---- tree drag helpers ----
+
+function findNode(tree: TreeNode[], id: string): TreeNode | null {
+  for (const n of tree) {
+    if (n.id === id) return n;
+    const found = findNode(n.children, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+function findParent(tree: TreeNode[], id: string, parent: TreeNode | null = null): TreeNode | null {
+  for (const n of tree) {
+    if (n.id === id) return parent;
+    const found = findParent(n.children, id, n);
+    if (found) return found;
+  }
+  return null;
+}
+
+/**
+ * Compute the new parentId and index for a dragged node based on AntD Tree onDrop info.
+ * - dropToGap=true:  dropped between siblings (before/after dropKey)
+ * - dropToGap=false: dropped inside dropKey (only valid if dropKey is a FOLDER)
+ */
+function computeDropTarget(
+  tree: TreeNode[],
+  dragKey: string,
+  dropKey: string,
+  dropToGap: boolean,
+  dropPosition: number
+): { parentId: string | null; index: number } {
+  if (!dropToGap) {
+    // dropping inside the drop node — find its children and compute index
+    const dropNode = findNode(tree, dropKey);
+    const children = dropNode?.children ?? [];
+    const filtered = children.filter((c) => c.id !== dragKey);
+    return { parentId: dropKey, index: filtered.length };
+  }
+
+  // dropping to a gap — find the drop node's parent and position
+  const dropParent = findParent(tree, dropKey);
+  const parentId = dropParent?.id ?? null;
+  const siblings = parentId
+    ? (findNode(tree, parentId)?.children ?? []).filter((c) => c.id !== dragKey)
+    : tree.filter((c) => c.id !== dragKey);
+
+  const dropIndex = siblings.findIndex((c) => c.id === dropKey);
+  // dropPosition: -1 = before the node, 1 = after the node
+  const index = dropPosition < 0 ? dropIndex : dropIndex + 1;
+  return { parentId, index: Math.max(0, index) };
 }
