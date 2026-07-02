@@ -99,6 +99,23 @@ export const knowledgeBasesApi = {
   getTree: (id: string) =>
     api.get<KnowledgeBaseTree>(`/knowledge-bases/${id}/tree`).then((r) => r.data),
   remove: (id: string) => api.delete<{ ok: true }>(`/knowledge-bases/${id}`).then((r) => r.data),
+  listMembers: (id: string) =>
+    api.get<KbMemberResponse>(`/knowledge-bases/${id}/members`).then((r) => r.data),
+  addMember: (id: string, email: string, role: Exclude<DocumentRole, 'OWNER'>) =>
+    api
+      .post<{
+        userId: string;
+        email: string;
+        name: string;
+        role: DocumentRole;
+      }>(`/knowledge-bases/${id}/members`, { email, role })
+      .then((r) => r.data),
+  updateMemberRole: (id: string, userId: string, role: Exclude<DocumentRole, 'OWNER'>) =>
+    api
+      .patch<{ ok: true }>(`/knowledge-bases/${id}/members/${userId}`, { role })
+      .then((r) => r.data),
+  removeMember: (id: string, userId: string) =>
+    api.delete<{ ok: true }>(`/knowledge-bases/${id}/members/${userId}`).then((r) => r.data),
 };
 
 export const nodesApi = {
