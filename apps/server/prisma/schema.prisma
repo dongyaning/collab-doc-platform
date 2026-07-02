@@ -25,8 +25,10 @@ model User {
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
-  documents     Document[] @relation("DocumentOwner")
+  documents     Document[]      @relation("DocumentOwner")
   memberships   DocumentMember[]
+  ownedKbs      KnowledgeBase[] @relation("KbOwner")
+  kbMemberships KbMember[]
 }
 
 model Document {
@@ -77,5 +79,87 @@ model DocumentMember {
   user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([documentId, userId])
+  @@index([userId])
+}
+
+// --- Knowledge Base (Wiki / Space) ---
+
+model KnowledgeBase {
+  id          String   @id @default(cuid())
+  title       String   @default("Untitled")
+  description String?
+
+  ownerId     String
+  owner       User     @relation("KbOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  nodes       Node[]
+  members     KbMember[]
+
+  @@index([ownerId])
+  @@index([updatedAt])
+}
+
+enum NodeType {
+  DOC
+  FOLDER
+}
+
+model Node {
+  id        String   @id @default(cuid())
+  kbId      String
+  parentId  String?
+  type      NodeType @default(DOC)
+  title     String   @default("Untitled")
+  sortOrder Int      @default(0)
+
+  /// Legacy Tiptap JSON (fallback when no Yjs state).
+  content   Json     @default("{}")
+  /// Latest Yjs document state.
+  yjsState  Bytes?
+  /// Monotonic version, bumped on each persisted snapshot.
+  version   Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  kb        KnowledgeBase @relation(fields: [kbId], references: [id], onDelete: Cascade)
+  parent    Node?         @relation("NodeTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children  Node[]        @relation("NodeTree")
+
+  versions  NodeVersion[]
+
+  @@index([kbId, parentId])
+  @@index([kbId, sortOrder])
+  @@index([updatedAt])
+}
+
+model NodeVersion {
+  id          String   @id @default(cuid())
+  nodeId      String
+  version     Int
+  yjsState    Bytes
+  createdById String?
+  label       String?
+  createdAt   DateTime @default(now())
+
+  node        Node     @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@unique([nodeId, version])
+  @@index([nodeId, createdAt])
+}
+
+model KbMember {
+  kbId      String
+  userId    String
+  role      DocumentRole @default(VIEWER)
+  createdAt DateTime     @default(now())
+
+  kb        KnowledgeBase @relation(fields: [kbId], references: [id], onDelete: Cascade)
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([kbId, userId])
   @@index([userId])
 }

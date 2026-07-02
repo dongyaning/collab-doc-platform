@@ -112,6 +112,7 @@ export class CollabGateway implements OnModuleDestroy {
       if (!payload?.sub) return null;
       const userId = payload.sub;
 
+      // Try Document first, then Node (for knowledge-base docs)
       const doc = await this.prisma.document.findUnique({
         where: { id: docId },
         select: {
@@ -119,8 +120,27 @@ export class CollabGateway implements OnModuleDestroy {
           members: { where: { userId }, select: { role: true }, take: 1 },
         },
       });
-      if (!doc) return null;
-      const role = doc.ownerId === userId ? 'OWNER' : doc.members[0]?.role;
+      if (doc) {
+        const role = doc.ownerId === userId ? 'OWNER' : doc.members[0]?.role;
+        if (!role) return null;
+        return { userId, docId, role };
+      }
+
+      // Try Node — check KB-level membership
+      const node = await this.prisma.node.findUnique({
+        where: { id: docId },
+        select: {
+          kb: {
+            select: {
+              ownerId: true,
+              members: { where: { userId }, select: { role: true }, take: 1 },
+            },
+          },
+        },
+      });
+      if (!node) return null;
+      const kb = node.kb;
+      const role = kb.ownerId === userId ? 'OWNER' : kb.members[0]?.role;
       if (!role) return null;
       return { userId, docId, role };
     } catch {
