@@ -1,7 +1,7 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: collab-doc-postgres
+    container_name: wiseflow-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: collab
@@ -10,12 +10,43 @@ services:
     ports:
       - '5432:5432'
     volumes:
-      - collab-doc-pgdata:/var/lib/postgresql/data
+      - wiseflow-pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U collab -d collab_doc']
       interval: 5s
       timeout: 5s
       retries: 10
 
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    container_name: wiseflow-server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: '3001'
+      DATABASE_URL: postgresql://collab:collab@postgres:5432/collab_doc?schema=public
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      JWT_EXPIRES_IN: 7d
+    ports:
+      - '3001:3001'
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/doc-web/Dockerfile
+      args:
+        VITE_COLLAB_WS_URL: ${VITE_COLLAB_WS_URL}
+    container_name: wiseflow-web
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - '80:80'
+
 volumes:
-  collab-doc-pgdata:
+  wiseflow-pgdata:
