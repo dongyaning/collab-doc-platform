@@ -13,7 +13,7 @@ import { IsEmail, IsIn, IsInt, IsObject, IsOptional, IsString, MaxLength } from 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { CurrentUser, type AuthUser } from '../auth/current-user.decorator.js';
 import { NodesService } from './nodes.service.js';
-import type { NodeType, DocumentRole, Prisma } from '@prisma/client';
+import type { NodeType, NodeRole, Prisma } from '@prisma/client';
 
 class CreateNodeDto {
   @IsString()
@@ -61,25 +61,36 @@ class CreateNodeVersionDto {
   label?: string;
 }
 
-const MEMBER_ROLES: DocumentRole[] = ['EDITOR', 'COMMENTER', 'VIEWER'];
+const MEMBER_ROLES: NodeRole[] = ['EDITOR', 'COMMENTER', 'VIEWER'];
 
 class AddMemberDto {
   @IsEmail()
   email!: string;
 
   @IsIn(MEMBER_ROLES)
-  role!: DocumentRole;
+  role!: NodeRole;
+
+  @IsOptional()
+  includeChildren?: boolean;
 }
 
 class UpdateMemberDto {
   @IsIn(MEMBER_ROLES)
-  role!: DocumentRole;
+  role!: NodeRole;
+
+  @IsOptional()
+  includeChildren?: boolean;
 }
 
-@UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
 @Controller('nodes')
 export class NodesController {
   constructor(@Inject(NodesService) private readonly nodes: NodesService) {}
+
+  @Get('shared')
+  listShared(@CurrentUser() user: AuthUser) {
+    return this.nodes.listShared(user.id);
+  }
 
   @Get(':id')
   get(@CurrentUser() user: AuthUser, @Param('id') id: string) {
@@ -141,16 +152,16 @@ export class NodesController {
     return this.nodes.getVersion(user.id, id, versionId);
   }
 
-  // ---------- members ----------
+  // ---------- node-level members ----------
 
   @Get(':id/members')
   listMembers(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.nodes.listMembers(user.id, id);
+    return this.nodes.listNodeMembers(user.id, id);
   }
 
   @Post(':id/members')
   addMember(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: AddMemberDto) {
-    return this.nodes.addMember(user.id, id, dto.email, dto.role);
+    return this.nodes.addNodeMember(user.id, id, dto.email, dto.role, dto.includeChildren);
   }
 
   @Patch(':id/members/:userId')
@@ -160,7 +171,7 @@ export class NodesController {
     @Param('userId') targetUserId: string,
     @Body() dto: UpdateMemberDto
   ) {
-    return this.nodes.updateMember(user.id, id, targetUserId, dto.role);
+    return this.nodes.updateNodeMember(user.id, id, targetUserId, dto.role, dto.includeChildren);
   }
 
   @Delete(':id/members/:userId')
@@ -169,6 +180,6 @@ export class NodesController {
     @Param('id') id: string,
     @Param('userId') targetUserId: string
   ) {
-    return this.nodes.removeMember(user.id, id, targetUserId);
+    return this.nodes.removeNodeMember(user.id, id, targetUserId);
   }
 }

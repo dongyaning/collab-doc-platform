@@ -13,7 +13,7 @@ import { IsEmail, IsIn, IsOptional, IsString, MaxLength } from 'class-validator'
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { CurrentUser, type AuthUser } from '../auth/current-user.decorator.js';
 import { KnowledgeBasesService } from './knowledge-bases.service.js';
-import type { DocumentRole } from '@prisma/client';
+import type { NodeRole } from '@prisma/client';
 
 class CreateKbDto {
   @IsOptional()
@@ -27,19 +27,19 @@ class CreateKbDto {
   description?: string;
 }
 
-const MEMBER_ROLES: DocumentRole[] = ['EDITOR', 'COMMENTER', 'VIEWER'];
+const MEMBER_ROLES: NodeRole[] = ['EDITOR', 'COMMENTER', 'VIEWER'];
 
 class AddKbMemberDto {
   @IsEmail()
   email!: string;
 
   @IsIn(MEMBER_ROLES)
-  role!: DocumentRole;
+  role!: NodeRole;
 }
 
 class UpdateKbMemberDto {
   @IsIn(MEMBER_ROLES)
-  role!: DocumentRole;
+  role!: NodeRole;
 }
 
 @UseGuards(JwtAuthGuard)

@@ -1,7 +1,12 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.module.js';
 import { KnowledgeBasesService } from '../knowledge-bases/knowledge-bases.service.js';
-import type { Prisma, NodeType, DocumentRole } from '@prisma/client';
+import type { Prisma, NodeType, NodeRole } from '@prisma/client';
 import { RoomManager } from '../collab/room-manager.js';
 
 @Injectable()
@@ -18,8 +23,8 @@ export class NodesService {
       where: { id: nodeId },
     });
     if (!node) throw new NotFoundException();
-    // access check via KB membership
-    await this.kbs.requireRole(userId, node.kbId, 'VIEWER');
+    // access check via hierarchical node permissions
+    await this.kbs.requireNodeRole(userId, nodeId, 'VIEWER');
     return node;
   }
 
@@ -70,7 +75,7 @@ export class NodesService {
       where: { id: nodeId },
     });
     if (!node) throw new NotFoundException();
-    await this.kbs.requireRole(userId, node.kbId, 'EDITOR');
+    await this.kbs.requireNodeRole(userId, nodeId, 'EDITOR');
 
     return this.prisma.node.update({
       where: { id: nodeId },
@@ -87,7 +92,7 @@ export class NodesService {
       where: { id: nodeId },
     });
     if (!node) throw new NotFoundException();
-    await this.kbs.requireRole(userId, node.kbId, 'EDITOR');
+    await this.kbs.requireNodeRole(userId, nodeId, 'EDITOR');
 
     const kbId = node.kbId;
     const newParentId = data.parentId;
@@ -144,7 +149,7 @@ export class NodesService {
       where: { id: nodeId },
     });
     if (!node) throw new NotFoundException();
-    await this.kbs.requireRole(userId, node.kbId, 'OWNER');
+    await this.kbs.requireNodeRole(userId, nodeId, 'OWNER');
 
     await this.prisma.node.delete({ where: { id: nodeId } });
     return { ok: true };
@@ -157,7 +162,7 @@ export class NodesService {
       where: { id: nodeId },
     });
     if (!node) throw new NotFoundException();
-    await this.kbs.requireRole(userId, node.kbId, 'VIEWER');
+    await this.kbs.requireNodeRole(userId, nodeId, 'VIEWER');
 
     return this.prisma.nodeVersion.findMany({
       where: { nodeId },
@@ -177,7 +182,7 @@ export class NodesService {
       where: { id: nodeId },
     });
     if (!node) throw new NotFoundException();
-    await this.kbs.requireRole(userId, node.kbId, 'EDITOR');
+    await this.kbs.requireNodeRole(userId, nodeId, 'EDITOR');
 
     return this.rooms.createManualSnapshot(nodeId, userId, label);
   }
@@ -187,54 +192,110 @@ export class NodesService {
       where: { id: nodeId },
     });
     if (!node) throw new NotFoundException();
-    await this.kbs.requireRole(userId, node.kbId, 'VIEWER');
+    await this.kbs.requireNodeRole(userId, nodeId, 'VIEWER');
 
     return this.rooms.getVersionSnapshot(nodeId, versionId);
   }
 
-  // ---------- members (delegate to KB-level) ----------
+  // ---------- node-level members ----------
 
-  async listMembers(userId: string, nodeId: string) {
-    const node = await this.prisma.node.findUnique({
-      where: { id: nodeId },
-    });
-    if (!node) throw new NotFoundException();
-    await this.kbs.requireRole(userId, node.kbId, 'VIEWER');
-
-    // return KB members — knowledge-base level access control
-    const kb = await this.prisma.knowledgeBase.findUnique({
-      where: { id: node.kbId },
+  /** List nodes shared with the user (where they have a direct NodeMember). */
+  async listShared(userId: string) {
+    // Find all NodeMember rows for this user, grouped by KB.
+    // Exclude rootNode memberships (those are KB-level shares).
+    const memberships = await this.prisma.nodeMember.findMany({
+      where: { userId },
       select: {
-        ownerId: true,
-        owner: { select: { id: true, email: true, name: true } },
-        members: {
+        role: true,
+        node: {
           select: {
-            role: true,
-            createdAt: true,
-            user: { select: { id: true, email: true, name: true } },
+            id: true,
+            kbId: true,
+            type: true,
+            title: true,
+            parentId: true,
+            sortOrder: true,
+            kb: { select: { id: true, title: true, rootNodeId: true } },
           },
         },
       },
     });
-    if (!kb) throw new NotFoundException();
+
+    // Filter out rootNode memberships and group by KB
+    const seenKbIds = new Set<string>();
+    const result: Array<{
+      node: { id: string; kbId: string; type: string; title: string; parentId: string | null };
+      kb: { id: string; title: string };
+      role: NodeRole;
+    }> = [];
+
+    for (const m of memberships) {
+      if (m.node.kb.rootNodeId === m.node.id) continue; // KB-level share
+      seenKbIds.add(m.node.kbId);
+      result.push({
+        node: {
+          id: m.node.id,
+          kbId: m.node.kbId,
+          type: m.node.type,
+          title: m.node.title,
+          parentId: m.node.parentId,
+        },
+        kb: { id: m.node.kb.id, title: m.node.kb.title },
+        role: m.role,
+      });
+    }
+
+    return result;
+  }
+
+  async listNodeMembers(userId: string, nodeId: string) {
+    const node = await this.prisma.node.findUnique({
+      where: { id: nodeId },
+    });
+    if (!node) throw new NotFoundException();
+    await this.kbs.requireNodeRole(userId, nodeId, 'VIEWER');
+
+    const members = await this.prisma.nodeMember.findMany({
+      where: { nodeId },
+      select: {
+        role: true,
+        includeChildren: true,
+        createdAt: true,
+        user: { select: { id: true, email: true, name: true } },
+      },
+    });
+
+    // Resolve the node's KB owner
+    const kb = await this.prisma.knowledgeBase.findUnique({
+      where: { id: node.kbId },
+      select: { ownerId: true, owner: { select: { id: true, email: true, name: true } } },
+    });
+
     return {
-      owner: kb.owner,
-      members: kb.members.map((m) => ({
+      owner: kb!.owner,
+      members: members.map((m) => ({
         userId: m.user.id,
         email: m.user.email,
         name: m.user.name,
         role: m.role,
+        includeChildren: m.includeChildren,
         createdAt: m.createdAt,
       })),
     };
   }
 
-  async addMember(userId: string, nodeId: string, email: string, role: DocumentRole) {
+  async addNodeMember(
+    userId: string, nodeId: string, email: string, role: NodeRole,
+    includeChildren = false,
+  ) {
     const node = await this.prisma.node.findUnique({
       where: { id: nodeId },
     });
     if (!node) throw new NotFoundException();
-    await this.kbs.requireRole(userId, node.kbId, 'OWNER');
+    await this.kbs.requireNodeRole(userId, nodeId, 'OWNER');
+    if (role === 'OWNER') {
+      throw new ForbiddenException('cannot grant OWNER role');
+    }
 
     const invitee = await this.prisma.user.findUnique({
       where: { email },
@@ -242,40 +303,46 @@ export class NodesService {
     });
     if (!invitee) throw new NotFoundException(`no user with email ${email}`);
 
-    await this.prisma.kbMember.upsert({
-      where: { kbId_userId: { kbId: node.kbId, userId: invitee.id } },
-      update: { role },
-      create: { kbId: node.kbId, userId: invitee.id, role },
+    await this.prisma.nodeMember.upsert({
+      where: { nodeId_userId: { nodeId, userId: invitee.id } },
+      update: { role, includeChildren },
+      create: { nodeId, userId: invitee.id, role, includeChildren },
     });
     return { userId: invitee.id, email: invitee.email, name: invitee.name, role };
   }
 
-  async updateMember(userId: string, nodeId: string, targetUserId: string, role: DocumentRole) {
+  async updateNodeMember(
+    userId: string, nodeId: string, targetUserId: string, role: NodeRole,
+    includeChildren?: boolean,
+  ) {
     const node = await this.prisma.node.findUnique({
       where: { id: nodeId },
     });
     if (!node) throw new NotFoundException();
-    await this.kbs.requireRole(userId, node.kbId, 'OWNER');
+    await this.kbs.requireNodeRole(userId, nodeId, 'OWNER');
+    if (role === 'OWNER') {
+      throw new ForbiddenException('cannot grant OWNER role');
+    }
 
-    await this.prisma.kbMember.update({
-      where: { kbId_userId: { kbId: node.kbId, userId: targetUserId } },
-      data: { role },
+    await this.prisma.nodeMember.update({
+      where: { nodeId_userId: { nodeId, userId: targetUserId } },
+      data: { role, ...(includeChildren !== undefined ? { includeChildren } : {}) },
     });
     return { ok: true };
   }
 
-  async removeMember(userId: string, nodeId: string, targetUserId: string) {
+  async removeNodeMember(userId: string, nodeId: string, targetUserId: string) {
     const node = await this.prisma.node.findUnique({
       where: { id: nodeId },
     });
     if (!node) throw new NotFoundException();
-    await this.kbs.requireRole(userId, node.kbId, 'OWNER');
+    await this.kbs.requireNodeRole(userId, nodeId, 'OWNER');
     if (userId === targetUserId) {
       throw new NotFoundException('cannot remove yourself');
     }
 
-    await this.prisma.kbMember.delete({
-      where: { kbId_userId: { kbId: node.kbId, userId: targetUserId } },
+    await this.prisma.nodeMember.delete({
+      where: { nodeId_userId: { nodeId, userId: targetUserId } },
     });
     return { ok: true };
   }

@@ -7,7 +7,7 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import type { WebSocket } from 'ws';
 import { PrismaService } from '../prisma/prisma.module.js';
 import { Room } from './room.js';
-import type { DocumentRole } from '@prisma/client';
+import type { NodeRole } from '@prisma/client';
 
 const MESSAGE_SYNC = 0;
 const MESSAGE_AWARENESS = 1;
@@ -46,11 +46,11 @@ export class RoomManager {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   /** Get-or-create a room and ensure its initial state is loaded from PG. */
-  async getOrCreateRoom(docId: string, entityType: 'document' | 'node'): Promise<Room> {
+  async getOrCreateRoom(docId: string): Promise<Room> {
     let room = this.rooms.get(docId);
     if (room) return room;
 
-    room = new Room(docId, entityType);
+    room = new Room(docId);
     this.rooms.set(docId, room);
     await this.loadInitialState(room);
     this.wireDocListeners(room);
@@ -59,16 +59,10 @@ export class RoomManager {
 
   /** Hydrate the room's Y.Doc from PG. */
   private async loadInitialState(room: Room): Promise<void> {
-    const rec =
-      room.entityType === 'node'
-        ? await this.prisma.node.findUnique({
-            where: { id: room.docId },
-            select: { yjsState: true, content: true },
-          })
-        : await this.prisma.document.findUnique({
-            where: { id: room.docId },
-            select: { yjsState: true, content: true },
-          });
+    const rec = await this.prisma.node.findUnique({
+      where: { id: room.docId },
+      select: { yjsState: true, content: true },
+    });
 
     if (!rec) {
       this.log.warn(`room ${room.docId}: doc not found, starting empty`);
@@ -128,7 +122,7 @@ export class RoomManager {
   }
 
   /** Add a websocket to a room and send the y-protocol handshake. */
-  async addConnection(room: Room, ws: WebSocket, role: DocumentRole): Promise<void> {
+  async addConnection(room: Room, ws: WebSocket, role: NodeRole): Promise<void> {
     room.addConn(ws, role);
 
     // 1. Editors can sync their local state into the room. Read-only clients
@@ -292,25 +286,14 @@ export class RoomManager {
     const snapshot = Y.encodeStateAsUpdate(room.ydoc);
     const buf = Buffer.from(snapshot);
     try {
-      let version: number;
-      if (room.entityType === 'node') {
-        const updated = await this.prisma.node.update({
-          where: { id: room.docId },
-          data: { yjsState: buf, version: { increment: 1 } },
-          select: { version: true },
-        });
-        version = updated.version;
-      } else {
-        const updated = await this.prisma.document.update({
-          where: { id: room.docId },
-          data: { yjsState: buf, version: { increment: 1 } },
-          select: { version: true },
-        });
-        version = updated.version;
-      }
+      const updated = await this.prisma.node.update({
+        where: { id: room.docId },
+        data: { yjsState: buf, version: { increment: 1 } },
+        select: { version: true },
+      });
       room.pendingUpdates = 0;
       room.lastPersistedAt = Date.now();
-      await this.maybeSnapshot(room, version, buf);
+      await this.maybeSnapshot(room, updated.version, buf);
     } catch (err) {
       this.log.error(`persist failed for ${room.docId}`, err as Error);
     }
@@ -328,23 +311,13 @@ export class RoomManager {
       room.lastSnapshotAt !== 0 && now - room.lastSnapshotAt >= SNAPSHOT_MAX_INTERVAL_MS;
     if (!byUpdates && !byTime) return;
     try {
-      if (room.entityType === 'node') {
-        await this.prisma.nodeVersion.create({
-          data: {
-            nodeId: room.docId,
-            version,
-            yjsState: snapshot,
-          },
-        });
-      } else {
-        await this.prisma.documentVersion.create({
-          data: {
-            documentId: room.docId,
-            version,
-            yjsState: snapshot,
-          },
-        });
-      }
+      await this.prisma.nodeVersion.create({
+        data: {
+          nodeId: room.docId,
+          version,
+          yjsState: snapshot,
+        },
+      });
       room.updatesSinceSnapshot = 0;
       room.lastSnapshotAt = now;
     } catch (err) {
@@ -362,105 +335,59 @@ export class RoomManager {
     label: string | undefined
   ): Promise<{ version: number; id: string }> {
     const room = this.rooms.get(docId);
-    let entityType: 'document' | 'node';
+
     let snapshotBuf: Buffer;
     let version: number;
 
     if (room) {
-      entityType = room.entityType;
       // Live room: flush in-memory state first so the snapshot reflects it.
       snapshotBuf = Buffer.from(Y.encodeStateAsUpdate(room.ydoc));
-      if (entityType === 'node') {
-        const updated = await this.prisma.node.update({
-          where: { id: docId },
-          data: { yjsState: snapshotBuf, version: { increment: 1 } },
-          select: { version: true },
-        });
-        version = updated.version;
-      } else {
-        const updated = await this.prisma.document.update({
-          where: { id: docId },
-          data: { yjsState: snapshotBuf, version: { increment: 1 } },
-          select: { version: true },
-        });
-        version = updated.version;
-      }
+      const updated = await this.prisma.node.update({
+        where: { id: docId },
+        data: { yjsState: snapshotBuf, version: { increment: 1 } },
+        select: { version: true },
+      });
+      version = updated.version;
       room.pendingUpdates = 0;
       room.lastPersistedAt = Date.now();
       room.updatesSinceSnapshot = 0;
       room.lastSnapshotAt = Date.now();
     } else {
-      // Cold doc: try Node first, then Document.
+      // Cold doc: fetch from Node table.
       const node = await this.prisma.node.findUnique({
         where: { id: docId },
         select: { yjsState: true, version: true },
       });
-      if (node) {
-        entityType = 'node';
-        snapshotBuf = node.yjsState ? Buffer.from(node.yjsState) : Buffer.alloc(0);
-        version = node.version;
-      } else {
-        const doc = await this.prisma.document.findUnique({
-          where: { id: docId },
-          select: { yjsState: true, version: true },
-        });
-        if (!doc) throw new Error('document not found');
-        entityType = 'document';
-        snapshotBuf = doc.yjsState ? Buffer.from(doc.yjsState) : Buffer.alloc(0);
-        version = doc.version;
-      }
+      if (!node) throw new Error('document not found');
+      snapshotBuf = node.yjsState ? Buffer.from(node.yjsState) : Buffer.alloc(0);
+      version = node.version;
     }
 
-    const created =
-      entityType === 'node'
-        ? await this.prisma.nodeVersion.create({
-            data: {
-              nodeId: docId,
-              version,
-              yjsState: snapshotBuf,
-              createdById: userId,
-              label: label ?? null,
-            },
-            select: { id: true, version: true },
-          })
-        : await this.prisma.documentVersion.create({
-            data: {
-              documentId: docId,
-              version,
-              yjsState: snapshotBuf,
-              createdById: userId,
-              label: label ?? null,
-            },
-            select: { id: true, version: true },
-          });
+    const created = await this.prisma.nodeVersion.create({
+      data: {
+        nodeId: docId,
+        version,
+        yjsState: snapshotBuf,
+        createdById: userId,
+        label: label ?? null,
+      },
+      select: { id: true, version: true },
+    });
     return created;
   }
 
   async getVersionSnapshot(docId: string, versionId: string) {
-    // Try nodeVersion first, then documentVersion.
-    const target =
-      (await this.prisma.nodeVersion.findFirst({
-        where: { id: versionId, nodeId: docId },
-        select: {
-          id: true,
-          version: true,
-          label: true,
-          createdById: true,
-          createdAt: true,
-          yjsState: true,
-        },
-      })) ??
-      (await this.prisma.documentVersion.findFirst({
-        where: { id: versionId, documentId: docId },
-        select: {
-          id: true,
-          version: true,
-          label: true,
-          createdById: true,
-          createdAt: true,
-          yjsState: true,
-        },
-      }));
+    const target = await this.prisma.nodeVersion.findFirst({
+      where: { id: versionId, nodeId: docId },
+      select: {
+        id: true,
+        version: true,
+        label: true,
+        createdById: true,
+        createdAt: true,
+        yjsState: true,
+      },
+    });
     if (!target) throw new NotFoundException('version not found');
     const ydoc = new Y.Doc();
     Y.applyUpdate(ydoc, new Uint8Array(target.yjsState));

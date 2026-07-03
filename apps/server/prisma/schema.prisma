@@ -1,5 +1,4 @@
-// Prisma schema for collab-doc-platform M1
-// Docs: https://www.prisma.io/docs
+// Prisma schema for WiseFlow
 
 generator client {
   provider = "prisma-client-js"
@@ -10,7 +9,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum DocumentRole {
+enum NodeRole {
   OWNER
   EDITOR
   COMMENTER
@@ -18,68 +17,20 @@ enum DocumentRole {
 }
 
 model User {
-  id            String     @id @default(cuid())
-  email         String     @unique
-  name          String
-  passwordHash  String
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  documents     Document[]      @relation("DocumentOwner")
-  memberships   DocumentMember[]
-  ownedKbs      KnowledgeBase[] @relation("KbOwner")
-  kbMemberships KbMember[]
-}
+  /// The user's default knowledge base (created on registration).
+  defaultKbId  String?
 
-model Document {
-  id        String   @id @default(cuid())
-  title     String   @default("Untitled")
-  /// Legacy Tiptap JSON. Used as fallback when a doc has no Yjs state yet (M1 docs).
-  content   Json     @default("{}")
-  /// Latest Yjs document state (binary, encoded via Y.encodeStateAsUpdate).
-  yjsState  Bytes?
-  /// Monotonic version, bumped on each persisted Yjs snapshot.
-  version   Int      @default(0)
-  ownerId   String
-  owner     User     @relation("DocumentOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  ownedKbs     KnowledgeBase[] @relation("KbOwner")
+  nodeMembers  NodeMember[]
 
-  members   DocumentMember[]
-  versions  DocumentVersion[]
-
-  @@index([ownerId])
-  @@index([updatedAt])
-}
-
-model DocumentVersion {
-  id          String   @id @default(cuid())
-  documentId  String
-  version     Int
-  yjsState    Bytes
-  /// User who triggered the snapshot (null = automatic).
-  createdById String?
-  /// Optional label for manual snapshots.
-  label       String?
-  createdAt   DateTime @default(now())
-
-  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
-
-  @@unique([documentId, version])
-  @@index([documentId, createdAt])
-}
-
-model DocumentMember {
-  documentId String
-  userId     String
-  role       DocumentRole @default(VIEWER)
-  createdAt  DateTime     @default(now())
-
-  document   Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@id([documentId, userId])
-  @@index([userId])
+  @@index([email])
 }
 
 // --- Knowledge Base (Wiki / Space) ---
@@ -92,11 +43,14 @@ model KnowledgeBase {
   ownerId     String
   owner       User     @relation("KbOwner", fields: [ownerId], references: [id], onDelete: Cascade)
 
+  /// Points to the root Node that represents this KB.
+  rootNodeId  String?  @unique
+  rootNode    Node?    @relation("KbRoot", fields: [rootNodeId], references: [id])
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  nodes       Node[]
-  members     KbMember[]
+  nodes       Node[]   @relation("KbNodes")
 
   @@index([ownerId])
   @@index([updatedAt])
@@ -125,11 +79,13 @@ model Node {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  kb        KnowledgeBase @relation(fields: [kbId], references: [id], onDelete: Cascade)
-  parent    Node?         @relation("NodeTree", fields: [parentId], references: [id], onDelete: Cascade)
+  kb        KnowledgeBase @relation("KbNodes", fields: [kbId], references: [id], onDelete: Cascade)
+  kbAsRoot  KnowledgeBase? @relation("KbRoot")  /// The KB this node is the root of (optional).
+  parent    Node?         @relation("NodeTree", fields: [parentId], references: [id], onDelete: SetNull)
   children  Node[]        @relation("NodeTree")
 
   versions  NodeVersion[]
+  members   NodeMember[]
 
   @@index([kbId, parentId])
   @@index([kbId, sortOrder])
@@ -141,7 +97,9 @@ model NodeVersion {
   nodeId      String
   version     Int
   yjsState    Bytes
+  /// User who triggered the snapshot (null = automatic).
   createdById String?
+  /// Optional label for manual snapshots.
   label       String?
   createdAt   DateTime @default(now())
 
@@ -151,15 +109,19 @@ model NodeVersion {
   @@index([nodeId, createdAt])
 }
 
-model KbMember {
-  kbId      String
-  userId    String
-  role      DocumentRole @default(VIEWER)
-  createdAt DateTime     @default(now())
+/// Hierarchical permissions: each Node can have its own members.
+/// Effective role is resolved by walking up the parent chain.
+model NodeMember {
+  nodeId          String
+  userId          String
+  role            NodeRole   @default(VIEWER)
+  /// Whether this membership also applies to all descendant nodes.
+  includeChildren Boolean    @default(false)
+  createdAt       DateTime   @default(now())
 
-  kb        KnowledgeBase @relation(fields: [kbId], references: [id], onDelete: Cascade)
-  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  node      Node       @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@id([kbId, userId])
+  @@id([nodeId, userId])
   @@index([userId])
 }

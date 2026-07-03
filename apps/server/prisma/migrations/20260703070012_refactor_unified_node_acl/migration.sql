@@ -1,5 +1,21 @@
 -- CreateEnum
+CREATE TYPE "NodeRole" AS ENUM ('OWNER', 'EDITOR', 'COMMENTER', 'VIEWER');
+
+-- CreateEnum
 CREATE TYPE "NodeType" AS ENUM ('DOC', 'FOLDER');
+
+-- CreateTable
+CREATE TABLE "User" (
+    "id" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "passwordHash" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "defaultKbId" TEXT,
+
+    CONSTRAINT "User_pkey" PRIMARY KEY ("id")
+);
 
 -- CreateTable
 CREATE TABLE "KnowledgeBase" (
@@ -7,6 +23,7 @@ CREATE TABLE "KnowledgeBase" (
     "title" TEXT NOT NULL DEFAULT 'Untitled',
     "description" TEXT,
     "ownerId" TEXT NOT NULL,
+    "rootNodeId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -44,14 +61,23 @@ CREATE TABLE "NodeVersion" (
 );
 
 -- CreateTable
-CREATE TABLE "KbMember" (
-    "kbId" TEXT NOT NULL,
+CREATE TABLE "NodeMember" (
+    "nodeId" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
-    "role" "DocumentRole" NOT NULL DEFAULT 'VIEWER',
+    "role" "NodeRole" NOT NULL DEFAULT 'VIEWER',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "KbMember_pkey" PRIMARY KEY ("kbId","userId")
+    CONSTRAINT "NodeMember_pkey" PRIMARY KEY ("nodeId","userId")
 );
+
+-- CreateIndex
+CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
+
+-- CreateIndex
+CREATE INDEX "User_email_idx" ON "User"("email");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "KnowledgeBase_rootNodeId_key" ON "KnowledgeBase"("rootNodeId");
 
 -- CreateIndex
 CREATE INDEX "KnowledgeBase_ownerId_idx" ON "KnowledgeBase"("ownerId");
@@ -75,22 +101,25 @@ CREATE INDEX "NodeVersion_nodeId_createdAt_idx" ON "NodeVersion"("nodeId", "crea
 CREATE UNIQUE INDEX "NodeVersion_nodeId_version_key" ON "NodeVersion"("nodeId", "version");
 
 -- CreateIndex
-CREATE INDEX "KbMember_userId_idx" ON "KbMember"("userId");
+CREATE INDEX "NodeMember_userId_idx" ON "NodeMember"("userId");
 
 -- AddForeignKey
 ALTER TABLE "KnowledgeBase" ADD CONSTRAINT "KnowledgeBase_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "KnowledgeBase" ADD CONSTRAINT "KnowledgeBase_rootNodeId_fkey" FOREIGN KEY ("rootNodeId") REFERENCES "Node"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "Node" ADD CONSTRAINT "Node_kbId_fkey" FOREIGN KEY ("kbId") REFERENCES "KnowledgeBase"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Node" ADD CONSTRAINT "Node_parentId_fkey" FOREIGN KEY ("parentId") REFERENCES "Node"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "Node" ADD CONSTRAINT "Node_parentId_fkey" FOREIGN KEY ("parentId") REFERENCES "Node"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "NodeVersion" ADD CONSTRAINT "NodeVersion_nodeId_fkey" FOREIGN KEY ("nodeId") REFERENCES "Node"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "KbMember" ADD CONSTRAINT "KbMember_kbId_fkey" FOREIGN KEY ("kbId") REFERENCES "KnowledgeBase"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "NodeMember" ADD CONSTRAINT "NodeMember_nodeId_fkey" FOREIGN KEY ("nodeId") REFERENCES "Node"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "KbMember" ADD CONSTRAINT "KbMember_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "NodeMember" ADD CONSTRAINT "NodeMember_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;

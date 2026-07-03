@@ -1,6 +1,6 @@
 import * as Y from 'yjs';
 import { Awareness, removeAwarenessStates } from 'y-protocols/awareness';
-import type { DocumentRole } from '@prisma/client';
+import type { NodeRole } from '@prisma/client';
 import type { WebSocket } from 'ws';
 
 /**
@@ -14,10 +14,7 @@ export class Room {
   readonly ydoc = new Y.Doc({ gc: true });
   readonly awareness = new Awareness(this.ydoc);
   readonly conns = new Map<WebSocket, Set<number>>(); // ws -> set of awareness clientIds it owns
-  readonly roles = new Map<WebSocket, DocumentRole>();
-
-  /** Whether the full document content lives in the Document or Node table. */
-  readonly entityType: 'document' | 'node';
+  readonly roles = new Map<WebSocket, NodeRole>();
 
   /** Set to true once initial state has been loaded from storage. */
   loaded = false;
@@ -34,17 +31,13 @@ export class Room {
   /** Last time an automatic snapshot was written (ms epoch). */
   lastSnapshotAt = 0;
 
-  constructor(
-    readonly docId: string,
-    entityType: 'document' | 'node'
-  ) {
-    this.entityType = entityType;
+  constructor(readonly docId: string) {
     // Awareness clients should not include the local Y.Doc client by default
     // (the server is not a "user").
     this.awareness.setLocalState(null);
   }
 
-  addConn(ws: WebSocket, role: DocumentRole): void {
+  addConn(ws: WebSocket, role: NodeRole): void {
     this.conns.set(ws, new Set());
     this.roles.set(ws, role);
   }

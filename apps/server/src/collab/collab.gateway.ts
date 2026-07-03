@@ -5,15 +5,14 @@ import type { IncomingMessage } from 'http';
 import { URL } from 'url';
 import { PrismaService } from '../prisma/prisma.module.js';
 import { RoomManager } from './room-manager.js';
-import type { DocumentRole } from '@prisma/client';
+import type { NodeRole } from '@prisma/client';
 
 const PING_INTERVAL_MS = 25_000;
 
 interface AuthInfo {
   userId: string;
   docId: string;
-  role: DocumentRole;
-  entityType: 'document' | 'node';
+  role: NodeRole;
 }
 
 interface CollabSocket extends WebSocket {
@@ -113,44 +112,62 @@ export class CollabGateway implements OnModuleDestroy {
       if (!payload?.sub) return null;
       const userId = payload.sub;
 
-      // Try Document first, then Node (for knowledge-base docs)
-      const doc = await this.prisma.document.findUnique({
-        where: { id: docId },
-        select: {
-          ownerId: true,
-          members: { where: { userId }, select: { role: true }, take: 1 },
-        },
-      });
-      if (doc) {
-        const role = doc.ownerId === userId ? 'OWNER' : doc.members[0]?.role;
-        if (!role) return null;
-        return { userId, docId, role, entityType: 'document' };
-      }
-
-      // Try Node — check KB-level membership
-      const node = await this.prisma.node.findUnique({
-        where: { id: docId },
-        select: {
-          kb: {
-            select: {
-              ownerId: true,
-              members: { where: { userId }, select: { role: true }, take: 1 },
-            },
-          },
-        },
-      });
-      if (!node) return null;
-      const kb = node.kb;
-      const role = kb.ownerId === userId ? 'OWNER' : kb.members[0]?.role;
+      // Look up the node and resolve effective role via NodeMember hierarchy
+      const role = await this.resolveNodeRole(userId, docId);
       if (!role) return null;
-      return { userId, docId, role, entityType: 'node' };
+      return { userId, docId, role };
     } catch {
       return null;
     }
   }
 
+  /**
+   * Resolve effective role for a userId on a node by walking the parent chain.
+   */
+  private async resolveNodeRole(
+    userId: string,
+    nodeId: string
+  ): Promise<NodeRole | null> {
+    let currentId: string | null = nodeId;
+    let best: NodeRole | null = null;
+
+    const RANK: Record<NodeRole, number> = {
+      OWNER: 4,
+      EDITOR: 3,
+      COMMENTER: 2,
+      VIEWER: 1,
+    };
+
+    while (currentId) {
+      const member = await this.prisma.nodeMember.findUnique({
+        where: { nodeId_userId: { nodeId: currentId, userId } },
+        select: { role: true },
+      });
+      if (member) {
+        if (!best || RANK[member.role] > RANK[best]) {
+          best = member.role;
+          if (best === 'OWNER') return best; // highest possible, short-circuit
+        }
+      }
+      // Walk up to parent
+      const parentInfo = await this.prisma.node.findUnique({
+        where: { id: currentId },
+        select: { parentId: true, kb: { select: { ownerId: true } } },
+      }) as { parentId: string | null; kb: { ownerId: string } } | null;
+      if (!parentInfo) break;
+
+      // KB owner always has OWNER on every node in the KB
+      if (parentInfo.kb.ownerId === userId) {
+        return 'OWNER';
+      }
+
+      currentId = parentInfo.parentId;
+    }
+    return best;
+  }
+
   private async handleConnection(ws: CollabSocket, auth: AuthInfo): Promise<void> {
-    const room = await this.rooms.getOrCreateRoom(auth.docId, auth.entityType);
+    const room = await this.rooms.getOrCreateRoom(auth.docId);
     await this.rooms.addConnection(room, ws, auth.role);
 
     ws.on('message', (data: Buffer) => {

@@ -1,6 +1,6 @@
 /**
  * Seeds demo accounts so M1 can be tested end-to-end without a signup UI.
- * Run with: `pnpm --filter @collab/server seed`
+ * Run with: `pnpm --filter @wiseflow/server seed`
  */
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
@@ -30,36 +30,7 @@ async function main() {
       create: { email: seedUser.email, name: seedUser.name, passwordHash },
     });
 
-    const existingDocs = await prisma.document.count({ where: { ownerId: user.id } });
-    if (existingDocs === 0) {
-      await prisma.document.create({
-        data: {
-          title: 'Welcome to collab-doc-platform',
-          ownerId: user.id,
-          content: {
-            type: 'doc',
-            content: [
-              {
-                type: 'heading',
-                attrs: { level: 1 },
-                content: [{ type: 'text', text: 'Welcome' }],
-              },
-              {
-                type: 'paragraph',
-                content: [
-                  {
-                    type: 'text',
-                    text: 'This is the M1 single-user MVP. Multi-user collab lands in M2.',
-                  },
-                ],
-              },
-            ],
-          },
-        },
-      });
-    }
-
-    // Seed a demo knowledge base with a nested tree (M3 direction).
+    // Seed a demo knowledge base with a nested tree.
     const existingKbs = await prisma.knowledgeBase.count({
       where: { ownerId: user.id },
     });
@@ -70,6 +41,24 @@ async function main() {
           description: 'Demo knowledge base with a hierarchical document tree.',
           ownerId: user.id,
         },
+      });
+
+      // Create root node for the KB
+      const rootNode = await prisma.node.create({
+        data: {
+          kbId: kb.id,
+          type: 'FOLDER',
+          title: `${seedUser.name}'s Wiki`,
+          content: { type: 'doc', content: [] },
+        },
+      });
+      await prisma.knowledgeBase.update({
+        where: { id: kb.id },
+        data: { rootNodeId: rootNode.id },
+      });
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { defaultKbId: kb.id },
       });
 
       const docContent = (heading: string, body: string) => ({
