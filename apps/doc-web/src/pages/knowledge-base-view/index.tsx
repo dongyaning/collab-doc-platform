@@ -39,41 +39,40 @@ import {
   PlusOutlined,
   SaveOutlined,
   TeamOutlined,
-  UserOutlined,
 } from '@ant-design/icons';
 import {
   knowledgeBasesApi,
   nodesApi,
-  type DocumentVersion,
-  type DocumentVersionDetail,
-  type DocumentRole,
-  type KbMemberResponse,
+  type NodeVersion,
+  type NodeVersionDetail,
+  type NodeRole,
+  type NodeMembersResponse,
 } from '../../lib/endpoints';
 import { useAuthStore } from '../../stores/auth.store';
-import type { TreeNode, KnowledgeBaseTree } from '@collab/shared';
+import type { TreeNode, KnowledgeBaseTree } from '@wiseflow/shared';
 import styles from './index.module.less';
 
 const { Sider, Content } = Layout;
 const { Text } = Typography;
 
 type ConnState = 'connecting' | 'connected' | 'disconnected';
-type AssignableRole = Exclude<DocumentRole, 'OWNER'>;
+type AssignableRole = Exclude<NodeRole, 'OWNER'>;
 
 const ASSIGNABLE_ROLES: AssignableRole[] = ['EDITOR', 'COMMENTER', 'VIEWER'];
-const ROLE_LABEL: Record<DocumentRole, string> = {
+const ROLE_LABEL: Record<NodeRole, string> = {
   OWNER: 'Owner',
   EDITOR: 'Editor',
   COMMENTER: 'Commenter',
   VIEWER: 'Viewer',
 };
-const ROLE_COLOR: Record<DocumentRole, string> = {
+const ROLE_COLOR: Record<NodeRole, string> = {
   OWNER: 'blue',
   EDITOR: 'green',
   COMMENTER: 'gold',
   VIEWER: 'default',
 };
 
-function canEdit(role: DocumentRole | undefined): boolean {
+function canEdit(role: NodeRole | undefined): boolean {
   return role === 'OWNER' || role === 'EDITOR';
 }
 
@@ -122,7 +121,7 @@ export function KnowledgeBaseViewPage() {
   });
 
   // resolve role from KB membership
-  const userRole: DocumentRole | undefined = treeQuery.data?.kb?.role as DocumentRole | undefined;
+  const userRole: NodeRole | undefined = treeQuery.data?.kb?.role as NodeRole | undefined;
   const editable = canEdit(userRole);
 
   // ---- tree helpers ----
@@ -157,11 +156,9 @@ export function KnowledgeBaseViewPage() {
     const dropToGap = info.dropToGap;
     const dropPosition = info.dropPosition;
 
-    // build a flat lookup from tree data to compute new parent + index
     const tree = treeQuery.data?.nodes ?? [];
     const { parentId, index } = computeDropTarget(tree, dragKey, dropKey, dropToGap, dropPosition);
 
-    // only folders (or root) can be drop targets when not dropping to gap
     if (!dropToGap) {
       const targetNode = findNode(tree, dropKey);
       if (targetNode && targetNode.type !== 'FOLDER') return;
@@ -305,8 +302,9 @@ export function KnowledgeBaseViewPage() {
               CollaborationCursor.configure({
                 provider,
                 user: {
-                  name: (user?.name ?? 'Anonymous').slice(0, 1).toUpperCase(),
+                  name: user?.name ?? 'Anonymous',
                   color: colorFor(user?.id ?? 'anon'),
+                  email: user?.email,
                 },
               }),
             ]
@@ -349,16 +347,16 @@ export function KnowledgeBaseViewPage() {
 
   // ---- versions ----
   const [versionsOpen, setVersionsOpen] = useState(false);
-  const versionsQuery = useQuery<DocumentVersion[]>({
+  const versionsQuery = useQuery<NodeVersion[]>({
     queryKey: ['node-versions', nodeId],
     queryFn: () => nodesApi.listVersions(nodeId!),
     enabled: versionsOpen && !!nodeId,
   });
   const [snapshotPending, setSnapshotPending] = useState(false);
 
-  // ---- members ----
+  // ---- node-level members (sharing) ----
   const [shareOpen, setShareOpen] = useState(false);
-  const membersQuery = useQuery<KbMemberResponse>({
+  const membersQuery = useQuery<NodeMembersResponse>({
     queryKey: ['node-members', nodeId],
     queryFn: () => nodesApi.listMembers(nodeId!),
     enabled: shareOpen && !!nodeId,
@@ -366,7 +364,7 @@ export function KnowledgeBaseViewPage() {
 
   // ---- KB-level members ----
   const [kbShareOpen, setKbShareOpen] = useState(false);
-  const kbMembersQuery = useQuery<KbMemberResponse>({
+  const kbMembersQuery = useQuery<NodeMembersResponse>({
     queryKey: ['kb-members', kbId],
     queryFn: () => knowledgeBasesApi.listMembers(kbId!),
     enabled: kbShareOpen && !!kbId,
@@ -398,16 +396,38 @@ export function KnowledgeBaseViewPage() {
   }
 
   const [previewVersionId, setPreviewVersionId] = useState<string | null>(null);
-  const versionPreviewQuery = useQuery<DocumentVersionDetail>({
+  const versionPreviewQuery = useQuery<NodeVersionDetail>({
     queryKey: ['node-version', nodeId, previewVersionId],
     queryFn: () => nodesApi.getVersion(nodeId!, previewVersionId!),
     enabled: !!nodeId && !!previewVersionId,
   });
 
-  const updateTime = useMemo(() => {
-    if (!activeDoc.data) return null;
-    return dayjs(activeDoc.data.updatedAt).format('YYYY-MM-DD:HH:mm:ss');
-  }, [activeDoc.data]);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 10_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const updateTime: string = useMemo(() => {
+    if (!activeDoc?.data) return '-';
+
+    const activeTime = dayjs(activeDoc.data.updatedAt);
+    const now = dayjs();
+
+    const diffMinutes = now.diff(activeTime, 'minute');
+    if (diffMinutes < 1) {
+      return 'just now';
+    } else if (now.diff(activeTime, 'hour') < 1) {
+      return diffMinutes === 1 ? '1 minute ago' : `${diffMinutes} minutes ago`;
+    } else if (now.diff(activeTime, 'day') < 1) {
+      return activeTime.format('HH:mm:ss');
+    } else if (now.diff(activeTime, 'day') === 1) {
+      return `Yesterday at ${activeTime.format('HH:mm:ss')}`;
+    } else {
+      return activeTime.format('YYYY-MM-DD HH:mm');
+    }
+    // tick 驱动定时刷新，activeDoc 驱动数据更新
+  }, [activeDoc, tick]);
 
   const isOwner = userRole === 'OWNER';
 
@@ -533,7 +553,7 @@ export function KnowledgeBaseViewPage() {
             </div>
 
             <div className={styles.paper}>
-              <span className={styles.updateTime}>最近更新: {updateTime}</span>
+              <span className={styles.updateTime}>recently update: {updateTime}</span>
               <Input
                 className={styles.titleInput}
                 value={title}
@@ -547,20 +567,22 @@ export function KnowledgeBaseViewPage() {
               </div>
             </div>
 
+            {/* Node-level share: shares only this document/folder */}
             <Drawer
-              title="Share"
+              title={`Share: ${activeDoc.data.title || 'Untitled'}`}
               open={shareOpen && isOwner}
               onClose={() => setShareOpen(false)}
               width={360}
             >
               <SharePanel
-                docId={nodeId!}
+                nodeId={nodeId!}
                 data={membersQuery.data}
                 loading={membersQuery.isLoading}
                 currentUserId={user?.id ?? ''}
               />
             </Drawer>
 
+            {/* KB-level share: shares the entire knowledge base */}
             <Drawer
               title="Knowledge base members"
               open={kbShareOpen}
@@ -602,32 +624,33 @@ export function KnowledgeBaseViewPage() {
   );
 }
 
-// ---- sub-components (share, versions, preview, conn) ----
-// (largely reused from original DocumentEditorPage)
+// ---- Node-level Share Panel (shares a specific node) ----
 
 function SharePanel({
-  docId,
+  nodeId,
   data,
   loading,
   currentUserId,
 }: {
-  docId: string;
-  data: KbMemberResponse | undefined;
+  nodeId: string;
+  data: NodeMembersResponse | undefined;
   loading: boolean;
   currentUserId: string;
 }) {
   const qc = useQueryClient();
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<AssignableRole>('EDITOR');
+  const [includeChildren, setIncludeChildren] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const invalidate = () =>
-    Promise.all([qc.invalidateQueries({ queryKey: ['node-members', docId] })]);
+    Promise.all([qc.invalidateQueries({ queryKey: ['node-members', nodeId] })]);
 
   const addMutation = useMutation({
-    mutationFn: () => nodesApi.addMember(docId, email.trim(), role),
+    mutationFn: () => nodesApi.addMember(nodeId, email.trim(), role, includeChildren),
     onSuccess: async () => {
       setEmail('');
       setError(null);
+      setIncludeChildren(false);
       await invalidate();
     },
     onError: (err: unknown) => {
@@ -638,12 +661,12 @@ function SharePanel({
     },
   });
   const updateMutation = useMutation({
-    mutationFn: ({ userId, role: r }: { userId: string; role: AssignableRole }) =>
-      nodesApi.updateMemberRole(docId, userId, r),
+    mutationFn: ({ userId, role: r, includeChildren: ic }: { userId: string; role: AssignableRole; includeChildren?: boolean }) =>
+      nodesApi.updateMemberRole(nodeId, userId, r, ic),
     onSuccess: invalidate,
   });
   const removeMutation = useMutation({
-    mutationFn: (userId: string) => nodesApi.removeMember(docId, userId),
+    mutationFn: (userId: string) => nodesApi.removeMember(nodeId, userId),
     onSuccess: invalidate,
   });
 
@@ -678,6 +701,18 @@ function SharePanel({
           Invite
         </Button>
       </Space.Compact>
+      <div style={{ marginTop: 8, marginBottom: 8 }}>
+        <label>
+          <input
+            type="checkbox"
+            checked={includeChildren}
+            onChange={(e) => setIncludeChildren(e.target.checked)}
+          />
+          <span style={{ marginLeft: 6, fontSize: 13, color: '#666' }}>
+            Include sub-documents
+          </span>
+        </label>
+      </div>
       {error ? (
         <Text type="danger" className={styles.inlineError}>
           {error}
@@ -739,7 +774,14 @@ function SharePanel({
                       {m.userId === currentUserId ? ' (you)' : ''}
                     </span>
                   }
-                  description={<Text type="secondary">{m.email}</Text>}
+                  description={
+                    <Text type="secondary">
+                      {m.email}
+                      {(m as { includeChildren?: boolean }).includeChildren
+                        ? ' · includes sub-documents'
+                        : ''}
+                    </Text>
+                  }
                 />
                 {isOwnerRow ? <Tag color="blue">Owner</Tag> : null}
               </List.Item>
@@ -751,6 +793,8 @@ function SharePanel({
   );
 }
 
+// ---- KB-level Share Panel (shares the entire KB via root node) ----
+
 function KbSharePanel({
   kbId,
   data,
@@ -758,7 +802,7 @@ function KbSharePanel({
   currentUserId,
 }: {
   kbId: string;
-  data: KbMemberResponse | undefined;
+  data: NodeMembersResponse | undefined;
   loading: boolean;
   currentUserId: string;
 }) {
@@ -909,7 +953,7 @@ function VersionsPanel({
   onSelect,
 }: {
   loading: boolean;
-  versions: DocumentVersion[];
+  versions: NodeVersion[];
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
@@ -966,7 +1010,7 @@ function VersionPreviewModal({
 }: {
   open: boolean;
   loading: boolean;
-  version: DocumentVersionDetail | undefined;
+  version: NodeVersionDetail | undefined;
   onClose: () => void;
 }) {
   const previewEditor = useEditor(
@@ -1064,12 +1108,6 @@ function PeerList({
                       </Text>
                     </Space>
                   ) : null}
-                  <Space size={4} style={{ marginTop: 6 }}>
-                    <UserOutlined style={{ fontSize: 12, color: '#999' }} />
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      Collaborator
-                    </Text>
-                  </Space>
                 </div>
               </Space>
             </div>

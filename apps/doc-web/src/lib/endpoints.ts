@@ -1,30 +1,25 @@
 import { api } from './api';
-import type { KnowledgeBaseSummary, KnowledgeBaseTree, NodeDetail } from '@collab/shared';
+import type { KnowledgeBaseSummary, KnowledgeBaseTree, NodeDetail } from '@wiseflow/shared';
 
-// ---- existing document types ----
+// ---- shared types ----
 
-export type DocumentRole = 'OWNER' | 'EDITOR' | 'COMMENTER' | 'VIEWER';
+export type NodeRole = 'OWNER' | 'EDITOR' | 'COMMENTER' | 'VIEWER';
 
-export interface DocumentSummary {
-  id: string;
-  title: string;
+export interface NodeMember {
+  userId: string;
+  email: string;
+  name: string;
+  role: Exclude<NodeRole, 'OWNER'>;
+  includeChildren?: boolean;
   createdAt: string;
-  updatedAt: string;
-  owner: { id: string; name: string; email: string };
-  role: DocumentRole;
 }
 
-export interface DocumentDetail {
-  id: string;
-  title: string;
-  createdAt: string;
-  updatedAt: string;
-  content: unknown;
-  ownerId: string;
-  role: DocumentRole;
+export interface NodeMembersResponse {
+  owner: { id: string; email: string; name: string };
+  members: NodeMember[];
 }
 
-export interface DocumentVersion {
+export interface NodeVersion {
   id: string;
   version: number;
   label: string | null;
@@ -32,63 +27,22 @@ export interface DocumentVersion {
   createdAt: string;
 }
 
-export interface DocumentVersionDetail extends DocumentVersion {
+export interface NodeVersionDetail extends NodeVersion {
   content: unknown;
 }
 
-export interface DocumentMember {
-  userId: string;
-  email: string;
-  name: string;
-  role: Exclude<DocumentRole, 'OWNER'>;
-  createdAt: string;
+/** A shared node (from GET /nodes/shared) */
+export interface SharedNode {
+  node: {
+    id: string;
+    kbId: string;
+    type: string;
+    title: string;
+    parentId: string | null;
+  };
+  kb: { id: string; title: string };
+  role: NodeRole;
 }
-
-export interface DocumentMembersResponse {
-  owner: { id: string; email: string; name: string };
-  members: DocumentMember[];
-}
-
-// ---- knowledge base types ----
-
-export interface KbMemberResponse {
-  owner: { id: string; email: string; name: string };
-  members: DocumentMember[];
-}
-
-// ---- API objects ----
-
-export const documentsApi = {
-  list: () => api.get<DocumentSummary[]>('/documents').then((r) => r.data),
-  get: (id: string) => api.get<DocumentDetail>(`/documents/${id}`).then((r) => r.data),
-  create: (title?: string) => api.post<DocumentDetail>('/documents', { title }).then((r) => r.data),
-  update: (id: string, patch: { title?: string; content?: unknown }) =>
-    api.patch<DocumentDetail>(`/documents/${id}`, patch).then((r) => r.data),
-  remove: (id: string) => api.delete(`/documents/${id}`).then((r) => r.data),
-  listVersions: (id: string) =>
-    api.get<DocumentVersion[]>(`/documents/${id}/versions`).then((r) => r.data),
-  createVersion: (id: string, label?: string) =>
-    api
-      .post<{ id: string; version: number }>(`/documents/${id}/versions`, { label })
-      .then((r) => r.data),
-  getVersion: (id: string, versionId: string) =>
-    api.get<DocumentVersionDetail>(`/documents/${id}/versions/${versionId}`).then((r) => r.data),
-  listMembers: (id: string) =>
-    api.get<DocumentMembersResponse>(`/documents/${id}/members`).then((r) => r.data),
-  addMember: (id: string, email: string, role: Exclude<DocumentRole, 'OWNER'>) =>
-    api
-      .post<{
-        userId: string;
-        email: string;
-        name: string;
-        role: DocumentRole;
-      }>(`/documents/${id}/members`, { email, role })
-      .then((r) => r.data),
-  updateMemberRole: (id: string, userId: string, role: Exclude<DocumentRole, 'OWNER'>) =>
-    api.patch<{ ok: true }>(`/documents/${id}/members/${userId}`, { role }).then((r) => r.data),
-  removeMember: (id: string, userId: string) =>
-    api.delete<{ ok: true }>(`/documents/${id}/members/${userId}`).then((r) => r.data),
-};
 
 // ---- Knowledge Base API ----
 
@@ -100,23 +54,23 @@ export const knowledgeBasesApi = {
     api.get<KnowledgeBaseTree>(`/knowledge-bases/${id}/tree`).then((r) => r.data),
   remove: (id: string) => api.delete<{ ok: true }>(`/knowledge-bases/${id}`).then((r) => r.data),
   listMembers: (id: string) =>
-    api.get<KbMemberResponse>(`/knowledge-bases/${id}/members`).then((r) => r.data),
-  addMember: (id: string, email: string, role: Exclude<DocumentRole, 'OWNER'>) =>
+    api.get<NodeMembersResponse>(`/knowledge-bases/${id}/members`).then((r) => r.data),
+  addMember: (id: string, email: string, role: Exclude<NodeRole, 'OWNER'>) =>
     api
       .post<{
         userId: string;
         email: string;
         name: string;
-        role: DocumentRole;
+        role: NodeRole;
       }>(`/knowledge-bases/${id}/members`, { email, role })
       .then((r) => r.data),
-  updateMemberRole: (id: string, userId: string, role: Exclude<DocumentRole, 'OWNER'>) =>
-    api
-      .patch<{ ok: true }>(`/knowledge-bases/${id}/members/${userId}`, { role })
-      .then((r) => r.data),
+  updateMemberRole: (id: string, userId: string, role: Exclude<NodeRole, 'OWNER'>) =>
+    api.patch<{ ok: true }>(`/knowledge-bases/${id}/members/${userId}`, { role }).then((r) => r.data),
   removeMember: (id: string, userId: string) =>
     api.delete<{ ok: true }>(`/knowledge-bases/${id}/members/${userId}`).then((r) => r.data),
 };
+
+// ---- Node API (documents are now nodes) ----
 
 export const nodesApi = {
   get: (id: string) => api.get<NodeDetail>(`/nodes/${id}`).then((r) => r.data),
@@ -128,28 +82,29 @@ export const nodesApi = {
     api.patch<{ ok: true }>(`/nodes/${id}/move`, data).then((r) => r.data),
   remove: (id: string) => api.delete<{ ok: true }>(`/nodes/${id}`).then((r) => r.data),
   listVersions: (id: string) =>
-    api.get<DocumentVersion[]>(`/nodes/${id}/versions`).then((r) => r.data),
+    api.get<NodeVersion[]>(`/nodes/${id}/versions`).then((r) => r.data),
   createVersion: (id: string, label?: string) =>
     api
       .post<{ id: string; version: number }>(`/nodes/${id}/versions`, { label })
       .then((r) => r.data),
   getVersion: (id: string, versionId: string) =>
-    api.get<DocumentVersionDetail>(`/nodes/${id}/versions/${versionId}`).then((r) => r.data),
+    api.get<NodeVersionDetail>(`/nodes/${id}/versions/${versionId}`).then((r) => r.data),
   listMembers: (id: string) =>
-    api.get<KbMemberResponse>(`/nodes/${id}/members`).then((r) => r.data),
-  addMember: (id: string, email: string, role: Exclude<DocumentRole, 'OWNER'>) =>
+    api.get<NodeMembersResponse>(`/nodes/${id}/members`).then((r) => r.data),
+  addMember: (id: string, email: string, role: Exclude<NodeRole, 'OWNER'>, includeChildren?: boolean) =>
     api
       .post<{
         userId: string;
         email: string;
         name: string;
-        role: DocumentRole;
-      }>(`/nodes/${id}/members`, { email, role })
+        role: NodeRole;
+      }>(`/nodes/${id}/members`, { email, role, includeChildren })
       .then((r) => r.data),
-  updateMemberRole: (id: string, userId: string, role: Exclude<DocumentRole, 'OWNER'>) =>
-    api.patch<{ ok: true }>(`/nodes/${id}/members/${userId}`, { role }).then((r) => r.data),
+  updateMemberRole: (id: string, userId: string, role: Exclude<NodeRole, 'OWNER'>, includeChildren?: boolean) =>
+    api.patch<{ ok: true }>(`/nodes/${id}/members/${userId}`, { role, includeChildren }).then((r) => r.data),
   removeMember: (id: string, userId: string) =>
     api.delete<{ ok: true }>(`/nodes/${id}/members/${userId}`).then((r) => r.data),
+  listShared: () => api.get<SharedNode[]>('/nodes/shared').then((r) => r.data),
 };
 
 export const authApi = {
@@ -159,5 +114,12 @@ export const authApi = {
         accessToken: string;
         user: { id: string; email: string; name: string };
       }>('/auth/login', { email, password })
+      .then((r) => r.data),
+  register: (email: string, password: string, name: string) =>
+    api
+      .post<{
+        accessToken: string;
+        user: { id: string; email: string; name: string };
+      }>('/auth/register', { email, password, name })
       .then((r) => r.data),
 };

@@ -1,37 +1,41 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Alert, Button, Card, Form, Input, Typography } from 'antd';
-import { LockOutlined, MailOutlined } from '@ant-design/icons';
+import { LockOutlined, MailOutlined, UserOutlined } from '@ant-design/icons';
 import { authApi } from '../../lib/endpoints';
 import { useAuthStore } from '../../stores/auth.store';
 import { WiseFlowLogo } from '../../components/wiseflow-logo';
 import styles from './index.module.less';
 
-const { Title, Paragraph, Text } = Typography;
+const { Title } = Typography;
 
-interface LoginValues {
+interface RegisterValues {
+  name: string;
   email: string;
   password: string;
 }
 
-export function LoginPage() {
+export function RegisterPage() {
   const setSession = useAuthStore((s) => s.setSession);
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function onFinish(values: LoginValues) {
+  async function onFinish(values: RegisterValues) {
     setLoading(true);
     setError(null);
     try {
-      const { accessToken, user } = await authApi.login(values.email, values.password);
+      const { accessToken, user } = await authApi.register(
+        values.email,
+        values.password,
+        values.name
+      );
       setSession(accessToken, user);
       navigate('/documents', { replace: true });
     } catch (err: unknown) {
       const message =
         (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
-        'Login failed';
+        'Registration failed';
       setError(String(message));
     } finally {
       setLoading(false);
@@ -47,16 +51,18 @@ export function LoginPage() {
             WiseFlow
           </Title>
         </div>
-        <Paragraph type="secondary" className={styles.hint}>
-          Seeded accounts: <Text code>demo@wiseflow.dev / demo1234</Text> or{' '}
-          <Text code>reviewer@wiseflow.dev / reviewer1234</Text>
-        </Paragraph>
-        <Form<LoginValues>
+        <Form<RegisterValues>
           layout="vertical"
-          initialValues={{ email: 'demo@collab.dev', password: 'demo1234' }}
           onFinish={onFinish}
           requiredMark={false}
         >
+          <Form.Item
+            label="Name"
+            name="name"
+            rules={[{ required: true, message: 'Please enter your name' }]}
+          >
+            <Input prefix={<UserOutlined />} placeholder="Your name" />
+          </Form.Item>
           <Form.Item
             label="Email"
             name="email"
@@ -78,12 +84,12 @@ export function LoginPage() {
           ) : null}
           <Form.Item className={styles.submitItem}>
             <Button type="primary" htmlType="submit" block loading={loading}>
-              Sign in
+              Sign up
             </Button>
           </Form.Item>
         </Form>
-        <div className={styles.registerLink}>
-          Don&apos;t have an account? <Link to="/register">Sign up</Link>
+        <div className={styles.loginLink}>
+          Already have an account? <Link to="/login">Sign in</Link>
         </div>
       </Card>
     </div>
