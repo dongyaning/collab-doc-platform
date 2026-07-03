@@ -1,5 +1,5 @@
 {
-  "name": "@collab/doc-web",
+  "name": "@wiseflow/doc-web",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -12,8 +12,8 @@
   },
   "dependencies": {
     "@ant-design/icons": "^6.3.2",
-    "@collab/monitor-sdk": "workspace:*",
-    "@collab/shared": "workspace:*",
+    "@wiseflow/monitor-sdk": "workspace:*",
+    "@wiseflow/shared": "workspace:*",
     "@tanstack/react-query": "^5.59.0",
     "@tiptap/extension-collaboration": "^2.27.2",
     "@tiptap/extension-collaboration-cursor": "^2.26.2",

@@ -1,5 +1,5 @@
 /**
- * Shared types and utilities across collab-doc-platform packages.
+ * Shared types and utilities across WiseFlow packages.
  */
 
 export interface UserRef {
@@ -7,7 +7,7 @@ export interface UserRef {
   name: string;
 }
 
-export const PROJECT_NAME = 'collab-doc-platform';
+export const PROJECT_NAME = 'WiseFlow';
 
 // ---- Knowledge Base types ----
 

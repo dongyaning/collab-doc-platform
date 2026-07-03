@@ -1,5 +1,5 @@
 /**
- * @collab/monitor-sdk — placeholder. Real plugins land in M3.
+ * @wiseflow/monitor-sdk — placeholder. Real plugins land in M3.
  */
 export const SDK_VERSION = '0.0.0';
 

@@ -1,4 +1,4 @@
-# collab-doc-platform
+# WiseFlow
 
 在线协作文档平台（含自研监控 SDK / Mini Builder / Mini Agent）。
 
@@ -15,7 +15,7 @@
 ## 仓库结构
 
 ```
-collab-doc-platform
+wiseflow
 ├── apps
 │   ├── doc-web              # 协作文档前端（React + Vite，M4 切到 mini-builder）
 │   ├── monitor-dashboard    # 监控可视化后台
@@ -49,8 +49,8 @@ pnpm test             # 全仓 Vitest（M0 目前为空跑通）
 单独跑某个包：
 
 ```bash
-pnpm --filter @collab/doc-web dev
-pnpm --filter @collab/server dev
+pnpm --filter @wiseflow/doc-web dev
+pnpm --filter @wiseflow/server dev
 ```
 
 ## M1 启动指南（单人 MVP）
@@ -63,12 +63,12 @@ docker compose up -d postgres
 cp .env.example .env
 
 # 3. 初始化数据库
-pnpm --filter @collab/server prisma:migrate
-pnpm --filter @collab/server seed   # 生成 demo@collab.dev / demo1234
+pnpm --filter @wiseflow/server prisma:migrate
+pnpm --filter @wiseflow/server seed   # 生成 demo@collab.dev / demo1234
 
 # 4. 启动服务端 + 前端
-pnpm --filter @collab/server dev
-pnpm --filter @collab/doc-web dev
+pnpm --filter @wiseflow/server dev
+pnpm --filter @wiseflow/doc-web dev
 
 # 5. 浏览器打开 http://localhost:5173
 #    用 demo@collab.dev / demo1234 登录

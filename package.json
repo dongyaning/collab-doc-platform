@@ -1,5 +1,5 @@
 {
-  "name": "collab-doc-platform",
+  "name": "wiseflow",
   "private": true,
   "version": "0.0.0",
   "description": "在线协作文档平台（含自研监控 SDK / Mini Builder / Mini Agent）",

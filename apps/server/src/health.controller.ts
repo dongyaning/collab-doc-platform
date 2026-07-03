@@ -1,5 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
-import { PROJECT_NAME } from '@collab/shared';
+import { PROJECT_NAME } from '@wiseflow/shared';
 
 @Controller('health')
 export class HealthController {
