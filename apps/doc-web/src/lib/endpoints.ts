@@ -65,7 +65,9 @@ export const knowledgeBasesApi = {
       }>(`/knowledge-bases/${id}/members`, { email, role })
       .then((r) => r.data),
   updateMemberRole: (id: string, userId: string, role: Exclude<NodeRole, 'OWNER'>) =>
-    api.patch<{ ok: true }>(`/knowledge-bases/${id}/members/${userId}`, { role }).then((r) => r.data),
+    api
+      .patch<{ ok: true }>(`/knowledge-bases/${id}/members/${userId}`, { role })
+      .then((r) => r.data),
   removeMember: (id: string, userId: string) =>
     api.delete<{ ok: true }>(`/knowledge-bases/${id}/members/${userId}`).then((r) => r.data),
 };
@@ -81,8 +83,7 @@ export const nodesApi = {
   move: (id: string, data: { parentId: string | null; index: number }) =>
     api.patch<{ ok: true }>(`/nodes/${id}/move`, data).then((r) => r.data),
   remove: (id: string) => api.delete<{ ok: true }>(`/nodes/${id}`).then((r) => r.data),
-  listVersions: (id: string) =>
-    api.get<NodeVersion[]>(`/nodes/${id}/versions`).then((r) => r.data),
+  listVersions: (id: string) => api.get<NodeVersion[]>(`/nodes/${id}/versions`).then((r) => r.data),
   createVersion: (id: string, label?: string) =>
     api
       .post<{ id: string; version: number }>(`/nodes/${id}/versions`, { label })
@@ -91,7 +92,12 @@ export const nodesApi = {
     api.get<NodeVersionDetail>(`/nodes/${id}/versions/${versionId}`).then((r) => r.data),
   listMembers: (id: string) =>
     api.get<NodeMembersResponse>(`/nodes/${id}/members`).then((r) => r.data),
-  addMember: (id: string, email: string, role: Exclude<NodeRole, 'OWNER'>, includeChildren?: boolean) =>
+  addMember: (
+    id: string,
+    email: string,
+    role: Exclude<NodeRole, 'OWNER'>,
+    includeChildren?: boolean
+  ) =>
     api
       .post<{
         userId: string;
@@ -100,11 +106,28 @@ export const nodesApi = {
         role: NodeRole;
       }>(`/nodes/${id}/members`, { email, role, includeChildren })
       .then((r) => r.data),
-  updateMemberRole: (id: string, userId: string, role: Exclude<NodeRole, 'OWNER'>, includeChildren?: boolean) =>
-    api.patch<{ ok: true }>(`/nodes/${id}/members/${userId}`, { role, includeChildren }).then((r) => r.data),
+  updateMemberRole: (
+    id: string,
+    userId: string,
+    role: Exclude<NodeRole, 'OWNER'>,
+    includeChildren?: boolean
+  ) =>
+    api
+      .patch<{ ok: true }>(`/nodes/${id}/members/${userId}`, { role, includeChildren })
+      .then((r) => r.data),
   removeMember: (id: string, userId: string) =>
     api.delete<{ ok: true }>(`/nodes/${id}/members/${userId}`).then((r) => r.data),
   listShared: () => api.get<SharedNode[]>('/nodes/shared').then((r) => r.data),
+};
+
+export const filesApi = {
+  upload: (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return api
+      .post<{ id: string; url: string; originalName: string; size: number }>('/files/upload', fd)
+      .then((r) => r.data);
+  },
 };
 
 export const authApi = {
