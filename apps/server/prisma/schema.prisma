@@ -125,3 +125,24 @@ model NodeMember {
   @@id([nodeId, userId])
   @@index([userId])
 }
+
+/// Uploaded file metadata.
+model FileStorage {
+  id           String   @id @default(cuid())
+  originalName String
+  mimeType     String
+  size         Int
+  /// Storage driver: "local" or "s3".
+  storageType  String   @default("local")
+  /// Relative storage path (e.g. "2026/07/06/uuid.ext") or S3 object key.
+  storagePath  String
+  /// Publicly accessible URL.
+  url          String
+  /// Optional: which node the file is attached to.
+  nodeId       String?
+  uploadedById String?
+  createdAt    DateTime @default(now())
+
+  @@index([nodeId])
+  @@index([uploadedById])
+}
