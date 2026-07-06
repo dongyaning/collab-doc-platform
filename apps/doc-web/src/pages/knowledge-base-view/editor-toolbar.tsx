@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { Editor } from '@tiptap/react';
 import {
   BoldOutlined,
@@ -13,6 +13,7 @@ import {
   HighlightOutlined,
   BgColorsOutlined,
   BlockOutlined,
+  PictureOutlined,
 } from '@ant-design/icons';
 import { App, Dropdown, Input, Modal, Tooltip } from 'antd';
 import styles from './editor-toolbar.module.less';
@@ -138,6 +139,55 @@ export function EditorToolbar({ editor, editable }: EditorToolbarProps) {
     });
   }, [editor, modal]);
 
+  const handleImageUpload = useCallback(() => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+
+      const { filesApi } = await import('../../lib/endpoints');
+      try {
+        const { url } = await filesApi.upload(file);
+        editor!.chain().focus().setImage({ src: url }).run();
+      } catch {
+        modal.error({ title: '上传失败', content: '图片上传失败，请重试' });
+      }
+    };
+    input.click();
+  }, [editor, modal]);
+
+  const handlePaste = useCallback(
+    async (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (!file) continue;
+          const { filesApi } = await import('../../lib/endpoints');
+          try {
+            const { url } = await filesApi.upload(file);
+            editor!.chain().focus().setImage({ src: url }).run();
+          } catch {
+            // silent failure for paste
+          }
+        }
+      }
+    },
+    [editor]
+  );
+
+  // Attach paste handler for image paste
+  useEffect(() => {
+    const el = editor?.view.dom;
+    if (!el) return;
+    el.addEventListener('paste', handlePaste);
+    return () => el.removeEventListener('paste', handlePaste);
+  }, [handlePaste, editor?.view.dom]);
+
   if (!editable || !editor) return null;
 
   const headingValue =
@@ -165,7 +215,6 @@ export function EditorToolbar({ editor, editable }: EditorToolbarProps) {
   return (
     <div className={styles.toolbar}>
       <div className={styles.group}>
-        {/* Heading dropdown */}
         <Dropdown
           open={headingOpen}
           onOpenChange={setHeadingOpen}
@@ -262,6 +311,7 @@ export function EditorToolbar({ editor, editable }: EditorToolbarProps) {
       <div className={styles.sep} />
 
       <div className={styles.group}>
+        <ToolbarBtn icon={<PictureOutlined />} tooltip="插入图片" onClick={handleImageUpload} />
         <ToolbarBtn
           icon={<LinkOutlined />}
           active={editor.isActive('link')}

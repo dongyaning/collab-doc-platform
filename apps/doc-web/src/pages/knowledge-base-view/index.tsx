@@ -12,6 +12,7 @@ import LinkExtension from '@tiptap/extension-link';
 import TextStyle from '@tiptap/extension-text-style';
 import Color from '@tiptap/extension-color';
 import Highlight from '@tiptap/extension-highlight';
+import ImageExtension from '@tiptap/extension-image';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import { common, createLowlight } from 'lowlight';
 import { EditorToolbar } from './editor-toolbar';
@@ -29,6 +30,7 @@ import {
   Input,
   Layout,
   List,
+  message,
   Modal,
   Popover,
   Result,
@@ -55,6 +57,7 @@ import {
 import {
   knowledgeBasesApi,
   nodesApi,
+  filesApi,
   type NodeVersion,
   type NodeVersionDetail,
   type NodeRole,
@@ -311,6 +314,7 @@ export function KnowledgeBaseViewPage() {
       extensions: [
         StarterKit.configure({ history: false }),
         CodeBlockLowlight.configure({ lowlight }),
+        ImageExtension,
         Underline,
         TextStyle,
         Color,
@@ -485,7 +489,7 @@ export function KnowledgeBaseViewPage() {
   return (
     <Layout className={styles.layout}>
       <Sider
-        width={280}
+        size={280}
         collapsedWidth={48}
         className={styles.sider}
         collapsible
@@ -613,7 +617,6 @@ export function KnowledgeBaseViewPage() {
                   readOnly={!editable}
                   variant="borderless"
                 />
-                <span className={styles.titleUpdateTime}>{updateTime}</span>
               </div>
               <div className={styles.editorSurface}>
                 <EditorContent editor={editor} />
@@ -625,7 +628,7 @@ export function KnowledgeBaseViewPage() {
               title={`Share: ${activeDoc.data.title || 'Untitled'}`}
               open={shareOpen && isOwner}
               onClose={() => setShareOpen(false)}
-              width={360}
+              size={360}
             >
               <SharePanel
                 nodeId={nodeId!}
@@ -640,7 +643,7 @@ export function KnowledgeBaseViewPage() {
               title="Knowledge base members"
               open={kbShareOpen}
               onClose={() => setKbShareOpen(false)}
-              width={360}
+              size={360}
             >
               <KbSharePanel
                 kbId={kbId!}
@@ -654,7 +657,7 @@ export function KnowledgeBaseViewPage() {
               title="History"
               open={versionsOpen}
               onClose={() => setVersionsOpen(false)}
-              width={360}
+              size={360}
             >
               <VersionsPanel
                 loading={versionsQuery.isLoading}
