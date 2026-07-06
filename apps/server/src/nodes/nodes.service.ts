@@ -1,9 +1,4 @@
-import {
-  ForbiddenException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.module.js';
 import { KnowledgeBasesService } from '../knowledge-bases/knowledge-bases.service.js';
 import type { Prisma, NodeType, NodeRole } from '@prisma/client';
@@ -24,8 +19,8 @@ export class NodesService {
     });
     if (!node) throw new NotFoundException();
     // access check via hierarchical node permissions
-    await this.kbs.requireNodeRole(userId, nodeId, 'VIEWER');
-    return node;
+    const role = await this.kbs.requireNodeRole(userId, nodeId, 'VIEWER');
+    return { ...node, role };
   }
 
   async create(
@@ -285,8 +280,11 @@ export class NodesService {
   }
 
   async addNodeMember(
-    userId: string, nodeId: string, email: string, role: NodeRole,
-    includeChildren = false,
+    userId: string,
+    nodeId: string,
+    email: string,
+    role: NodeRole,
+    includeChildren = false
   ) {
     const node = await this.prisma.node.findUnique({
       where: { id: nodeId },
@@ -312,8 +310,11 @@ export class NodesService {
   }
 
   async updateNodeMember(
-    userId: string, nodeId: string, targetUserId: string, role: NodeRole,
-    includeChildren?: boolean,
+    userId: string,
+    nodeId: string,
+    targetUserId: string,
+    role: NodeRole,
+    includeChildren?: boolean
   ) {
     const node = await this.prisma.node.findUnique({
       where: { id: nodeId },

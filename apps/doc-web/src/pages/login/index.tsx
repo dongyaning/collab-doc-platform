@@ -8,7 +8,7 @@ import { useAuthStore } from '../../stores/auth.store';
 import { WiseFlowLogo } from '../../components/wiseflow-logo';
 import styles from './index.module.less';
 
-const { Title, Paragraph, Text } = Typography;
+const { Title } = Typography;
 
 interface LoginValues {
   email: string;
@@ -47,16 +47,7 @@ export function LoginPage() {
             WiseFlow
           </Title>
         </div>
-        <Paragraph type="secondary" className={styles.hint}>
-          Seeded accounts: <Text code>demo@wiseflow.dev / demo1234</Text> or{' '}
-          <Text code>reviewer@wiseflow.dev / reviewer1234</Text>
-        </Paragraph>
-        <Form<LoginValues>
-          layout="vertical"
-          initialValues={{ email: 'demo@collab.dev', password: 'demo1234' }}
-          onFinish={onFinish}
-          requiredMark={false}
-        >
+        <Form<LoginValues> layout="vertical" onFinish={onFinish} requiredMark={false}>
           <Form.Item
             label="Email"
             name="email"

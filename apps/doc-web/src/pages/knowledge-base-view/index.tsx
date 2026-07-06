@@ -7,8 +7,18 @@ import StarterKit from '@tiptap/starter-kit';
 import Collaboration from '@tiptap/extension-collaboration';
 import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
 import Placeholder from '@tiptap/extension-placeholder';
+import Underline from '@tiptap/extension-underline';
+import LinkExtension from '@tiptap/extension-link';
+import TextStyle from '@tiptap/extension-text-style';
+import Color from '@tiptap/extension-color';
+import Highlight from '@tiptap/extension-highlight';
+import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
+import { common, createLowlight } from 'lowlight';
+import { EditorToolbar } from './editor-toolbar';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
+
+const lowlight = createLowlight(common);
 import {
   App as AntdApp,
   Avatar,
@@ -36,6 +46,8 @@ import {
   FolderOpenOutlined,
   HistoryOutlined,
   MailOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
   PlusOutlined,
   SaveOutlined,
   TeamOutlined,
@@ -120,8 +132,10 @@ export function KnowledgeBaseViewPage() {
     enabled: !!nodeId,
   });
 
-  // resolve role from KB membership
-  const userRole: NodeRole | undefined = treeQuery.data?.kb?.role as NodeRole | undefined;
+  // resolve role — prefer node-level role, fall back to KB-level role
+  const userRole: NodeRole | undefined =
+    (activeDoc.data?.role as NodeRole | undefined) ??
+    (treeQuery.data?.kb?.role as NodeRole | undefined);
   const editable = canEdit(userRole);
 
   // ---- tree helpers ----
@@ -240,6 +254,7 @@ export function KnowledgeBaseViewPage() {
   }
 
   // ---- Yjs editor ----
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const ydoc = useMemo(() => new Y.Doc(), [nodeId]);
   const [provider, setProvider] = useState<WebsocketProvider | null>(null);
   const [connState, setConnState] = useState<ConnState>('connecting');
@@ -295,6 +310,15 @@ export function KnowledgeBaseViewPage() {
       editable,
       extensions: [
         StarterKit.configure({ history: false }),
+        CodeBlockLowlight.configure({ lowlight }),
+        Underline,
+        TextStyle,
+        Color,
+        Highlight.configure({ multicolor: true }),
+        LinkExtension.configure({
+          openOnClick: true,
+          HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' },
+        }),
         Placeholder.configure({ placeholder: 'Start writing…' }),
         Collaboration.configure({ document: ydoc }),
         ...(provider
@@ -302,7 +326,7 @@ export function KnowledgeBaseViewPage() {
               CollaborationCursor.configure({
                 provider,
                 user: {
-                  name: user?.name ?? 'Anonymous',
+                  name: user?.name?.slice(0, 1) ?? 'A',
                   color: colorFor(user?.id ?? 'anon'),
                   email: user?.email,
                 },
@@ -426,10 +450,12 @@ export function KnowledgeBaseViewPage() {
     } else {
       return activeTime.format('YYYY-MM-DD HH:mm');
     }
-    // tick 驱动定时刷新，activeDoc 驱动数据更新
+    // tick drives periodic refresh, activeDoc drives data update
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDoc, tick]);
 
   const isOwner = userRole === 'OWNER';
+  const [siderCollapsed, setSiderCollapsed] = useState(false);
 
   // ---- loading / error states ----
   if (treeQuery.isLoading) {
@@ -458,50 +484,72 @@ export function KnowledgeBaseViewPage() {
 
   return (
     <Layout className={styles.layout}>
-      <Sider width={280} className={styles.sider}>
+      <Sider
+        width={280}
+        collapsedWidth={48}
+        className={styles.sider}
+        collapsible
+        collapsed={siderCollapsed}
+        onCollapse={setSiderCollapsed}
+        trigger={null}
+      >
         <div className={styles.siderInner}>
-          <div className={styles.siderHeader}>
-            <Text className={styles.kbTitle} ellipsis>
-              {treeQuery.data.kb.title}
-            </Text>
-            <Space size={4}>
-              {isOwner ? (
+          <div className={styles.siderTopBar}>
+            {!siderCollapsed && (
+              <Text className={styles.kbTitle} ellipsis>
+                {treeQuery.data.kb.title}
+              </Text>
+            )}
+            <div className={styles.siderCollapseBtn}>
+              <Button
+                type="text"
+                size="small"
+                icon={siderCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+                onClick={() => setSiderCollapsed(!siderCollapsed)}
+              />
+            </div>
+            {!siderCollapsed && (
+              <>
+                {isOwner ? (
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<TeamOutlined />}
+                    className={styles.addBtn}
+                    onClick={() => setKbShareOpen(true)}
+                  />
+                ) : null}
                 <Button
                   type="text"
                   size="small"
-                  icon={<TeamOutlined />}
+                  icon={<PlusOutlined />}
                   className={styles.addBtn}
-                  onClick={() => setKbShareOpen(true)}
+                  onClick={() => onCreateChild(null)}
                 />
-              ) : null}
-              <Button
-                type="text"
-                size="small"
-                icon={<PlusOutlined />}
-                className={styles.addBtn}
-                onClick={() => onCreateChild(null)}
-              />
-              <Button
-                type="text"
-                size="small"
-                icon={<FolderOpenOutlined />}
-                className={styles.addBtn}
-                onClick={onCreateFolder}
-              />
-            </Space>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<FolderOpenOutlined />}
+                  className={styles.addBtn}
+                  onClick={onCreateFolder}
+                />
+              </>
+            )}
           </div>
-          <div className={styles.tree}>
-            <Tree
-              treeData={buildTreeData(treeQuery.data.nodes)}
-              onSelect={onSelect}
-              defaultExpandAll
-              selectedKeys={nodeId ? [nodeId] : []}
-              showIcon
-              draggable
-              blockNode
-              onDrop={onDrop}
-            />
-          </div>
+          {!siderCollapsed && (
+            <div className={styles.tree}>
+              <Tree
+                treeData={buildTreeData(treeQuery.data.nodes)}
+                onSelect={onSelect}
+                defaultExpandAll
+                selectedKeys={nodeId ? [nodeId] : []}
+                showIcon
+                draggable
+                blockNode
+                onDrop={onDrop}
+              />
+            </div>
+          )}
         </div>
       </Sider>
 
@@ -552,16 +600,21 @@ export function KnowledgeBaseViewPage() {
               </Space>
             </div>
 
+            <EditorToolbar editor={editor} editable={editable} />
+
             <div className={styles.paper}>
               <span className={styles.updateTime}>recently update: {updateTime}</span>
-              <Input
-                className={styles.titleInput}
-                value={title}
-                onChange={(e) => onTitleChange(e.target.value)}
-                placeholder="Untitled"
-                readOnly={!editable}
-                variant="borderless"
-              />
+              <div className={styles.titleRow}>
+                <Input
+                  className={styles.titleInput}
+                  value={title}
+                  onChange={(e) => onTitleChange(e.target.value)}
+                  placeholder="Untitled"
+                  readOnly={!editable}
+                  variant="borderless"
+                />
+                <span className={styles.titleUpdateTime}>{updateTime}</span>
+              </div>
               <div className={styles.editorSurface}>
                 <EditorContent editor={editor} />
               </div>
@@ -661,8 +714,15 @@ function SharePanel({
     },
   });
   const updateMutation = useMutation({
-    mutationFn: ({ userId, role: r, includeChildren: ic }: { userId: string; role: AssignableRole; includeChildren?: boolean }) =>
-      nodesApi.updateMemberRole(nodeId, userId, r, ic),
+    mutationFn: ({
+      userId,
+      role: r,
+      includeChildren: ic,
+    }: {
+      userId: string;
+      role: AssignableRole;
+      includeChildren?: boolean;
+    }) => nodesApi.updateMemberRole(nodeId, userId, r, ic),
     onSuccess: invalidate,
   });
   const removeMutation = useMutation({
@@ -708,9 +768,7 @@ function SharePanel({
             checked={includeChildren}
             onChange={(e) => setIncludeChildren(e.target.checked)}
           />
-          <span style={{ marginLeft: 6, fontSize: 13, color: '#666' }}>
-            Include sub-documents
-          </span>
+          <span style={{ marginLeft: 6, fontSize: 13, color: '#666' }}>Include sub-documents</span>
         </label>
       </div>
       {error ? (
@@ -1017,7 +1075,15 @@ function VersionPreviewModal({
     {
       editable: false,
       content: (version?.content ?? { type: 'doc', content: [] }) as JSONContent,
-      extensions: [StarterKit],
+      extensions: [
+        StarterKit,
+        CodeBlockLowlight.configure({ lowlight }),
+        Underline,
+        TextStyle,
+        Color,
+        Highlight.configure({ multicolor: true }),
+        LinkExtension.configure({ openOnClick: true }),
+      ],
     },
     [version?.id]
   );

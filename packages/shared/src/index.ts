@@ -51,6 +51,7 @@ export interface NodeDetail {
   sortOrder: number;
   content: unknown;
   ownerId: string;
+  role?: string;
   createdAt: string;
   updatedAt: string;
 }
