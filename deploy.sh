@@ -51,8 +51,8 @@ update_code() {
 run_migrations() {
   info "执行数据库迁移..."
   # 确保 postgres 完全就绪后，在 server 容器内执行 migrate
+  # DATABASE_URL 在 docker-compose.yml 的 server 服务中已定义，无需从宿主机传入
   docker-compose run --rm --no-deps \
-    -e DATABASE_URL="${DATABASE_URL}" \
     server npx prisma migrate deploy
 }
 
@@ -60,7 +60,6 @@ seed_demo() {
   info "初始化演示账号..."
   # 首次执行可能报错（种子已存在），忽略
   docker-compose run --rm --no-deps \
-    -e DATABASE_URL="${DATABASE_URL}" \
     -e SEED_USER_EMAIL="${SEED_USER_EMAIL:-demo@collab.dev}" \
     -e SEED_USER_PASSWORD="${SEED_USER_PASSWORD:-demo1234}" \
     -e SEED_USER_NAME="${SEED_USER_NAME:-Dong Yaning}" \
