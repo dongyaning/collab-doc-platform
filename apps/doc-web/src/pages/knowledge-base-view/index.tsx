@@ -9,17 +9,19 @@ import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
 import Placeholder from '@tiptap/extension-placeholder';
 import Underline from '@tiptap/extension-underline';
 import LinkExtension from '@tiptap/extension-link';
+import TextAlign from '@tiptap/extension-text-align';
 import TextStyle from '@tiptap/extension-text-style';
 import Color from '@tiptap/extension-color';
 import Highlight from '@tiptap/extension-highlight';
-import ImageExtension from '@tiptap/extension-image';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
+import { ReactNodeViewRenderer } from '@tiptap/react';
 import { common, createLowlight } from 'lowlight';
+import { ResizableImage, ImageNodeView } from '../../extensions/image';
+import { WidgetExtension, WidgetNodeView } from '../../extensions/widget';
+import { registerPresetWidgets } from '../../extensions/widget/presets';
 import { EditorToolbar } from './editor-toolbar';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
-
-const lowlight = createLowlight(common);
 import {
   App as AntdApp,
   Avatar,
@@ -67,6 +69,8 @@ import { useAuthStore } from '../../stores/auth.store';
 import type { TreeNode, KnowledgeBaseTree } from '@wiseflow/shared';
 import styles from './index.module.less';
 
+const lowlight = createLowlight(common);
+registerPresetWidgets();
 const { Sider, Content } = Layout;
 const { Text } = Typography;
 
@@ -107,6 +111,17 @@ const USER_COLORS = [
   '#a1887f',
 ];
 
+function buildCursorLabel(user: { name: string; color: string }): HTMLElement {
+  const cursor = document.createElement('span');
+  cursor.classList.add('collaboration-cursor__caret');
+  cursor.setAttribute('style', `border-color: ${user.color}`);
+  const label = document.createElement('div');
+  label.classList.add('collaboration-cursor__label');
+  label.setAttribute('style', `background-color: ${user.color}`);
+  label.textContent = user.name.slice(0, 1).toUpperCase();
+  cursor.appendChild(label);
+  return cursor;
+}
 function colorFor(seed: string): string {
   let h = 0;
   for (let i = 0; i < seed.length; i += 1) {
@@ -279,11 +294,21 @@ export function KnowledgeBaseViewPage() {
       color: colorFor(user.id),
       email: user.email,
     });
+
+    console.log('[aware] self clientId (set):', p.awareness.clientID, 'name:', user.name);
+    console.log('[aware] states after set:', Array.from(p.awareness.getStates().entries()));
+
     p.on('status', (e: { status: 'connecting' | 'connected' | 'disconnected' }) => {
       setConnState(e.status);
     });
     const updatePeers = () => {
       const states = Array.from(p.awareness.getStates().entries());
+      console.log(
+        '[aware] updatePeers self clientId:',
+        p.awareness.clientID,
+        'states:',
+        JSON.parse(JSON.stringify(states))
+      );
       setPeers(
         states.map(
           ([clientId, state]: [
@@ -314,7 +339,21 @@ export function KnowledgeBaseViewPage() {
       extensions: [
         StarterKit.configure({ history: false }),
         CodeBlockLowlight.configure({ lowlight }),
-        ImageExtension,
+        ResizableImage.extend({
+          addNodeView() {
+            return ReactNodeViewRenderer(ImageNodeView);
+          },
+        }),
+        WidgetExtension.extend({
+          addNodeView() {
+            return ReactNodeViewRenderer(WidgetNodeView);
+          },
+        }),
+        TextAlign.configure({
+          types: ['heading', 'paragraph', 'image'],
+          alignments: ['left', 'center', 'right'],
+          defaultAlignment: 'left',
+        }),
         Underline,
         TextStyle,
         Color,
@@ -330,10 +369,11 @@ export function KnowledgeBaseViewPage() {
               CollaborationCursor.configure({
                 provider,
                 user: {
-                  name: user?.name?.slice(0, 1) ?? 'A',
+                  name: user?.name ?? 'A',
                   color: colorFor(user?.id ?? 'anon'),
                   email: user?.email,
                 },
+                render: buildCursorLabel,
               }),
             ]
           : []),
@@ -489,7 +529,7 @@ export function KnowledgeBaseViewPage() {
   return (
     <Layout className={styles.layout}>
       <Sider
-        size={280}
+        width={280}
         collapsedWidth={48}
         className={styles.sider}
         collapsible
@@ -1081,6 +1121,21 @@ function VersionPreviewModal({
       extensions: [
         StarterKit,
         CodeBlockLowlight.configure({ lowlight }),
+        ResizableImage.extend({
+          addNodeView() {
+            return ReactNodeViewRenderer(ImageNodeView);
+          },
+        }),
+        WidgetExtension.extend({
+          addNodeView() {
+            return ReactNodeViewRenderer(WidgetNodeView);
+          },
+        }),
+        TextAlign.configure({
+          types: ['heading', 'paragraph', 'image'],
+          alignments: ['left', 'center', 'right'],
+          defaultAlignment: 'left',
+        }),
         Underline,
         TextStyle,
         Color,

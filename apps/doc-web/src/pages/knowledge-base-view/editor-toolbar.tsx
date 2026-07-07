@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Editor } from '@tiptap/react';
 import {
+  AlignLeftOutlined,
+  AlignCenterOutlined,
+  AlignRightOutlined,
+  AppstoreAddOutlined,
   BoldOutlined,
   ItalicOutlined,
   StrikethroughOutlined,
@@ -16,6 +20,7 @@ import {
   PictureOutlined,
 } from '@ant-design/icons';
 import { App, Dropdown, Input, Modal, Tooltip } from 'antd';
+import { listWidgets } from '../../extensions/widget';
 import styles from './editor-toolbar.module.less';
 
 interface EditorToolbarProps {
@@ -212,6 +217,15 @@ export function EditorToolbar({ editor, editable }: EditorToolbarProps) {
     </Tooltip>
   );
 
+  const widgetDefinitions = listWidgets();
+  const widgetTrigger = (
+    <Tooltip title="插入组件" mouseEnterDelay={0.4}>
+      <button type="button" className={styles.btn}>
+        <AppstoreAddOutlined />
+      </button>
+    </Tooltip>
+  );
+
   return (
     <div className={styles.toolbar}>
       <div className={styles.group}>
@@ -311,7 +325,55 @@ export function EditorToolbar({ editor, editable }: EditorToolbarProps) {
       <div className={styles.sep} />
 
       <div className={styles.group}>
+        <ToolbarBtn
+          icon={<AlignLeftOutlined />}
+          active={editor.isActive({ textAlign: 'left' })}
+          tooltip="左对齐"
+          onClick={() => editor.chain().focus().setTextAlign('left').run()}
+        />
+        <ToolbarBtn
+          icon={<AlignCenterOutlined />}
+          active={editor.isActive({ textAlign: 'center' })}
+          tooltip="居中对齐"
+          onClick={() => editor.chain().focus().setTextAlign('center').run()}
+        />
+        <ToolbarBtn
+          icon={<AlignRightOutlined />}
+          active={editor.isActive({ textAlign: 'right' })}
+          tooltip="右对齐"
+          onClick={() => editor.chain().focus().setTextAlign('right').run()}
+        />
+      </div>
+
+      <div className={styles.sep} />
+
+      <div className={styles.group}>
         <ToolbarBtn icon={<PictureOutlined />} tooltip="插入图片" onClick={handleImageUpload} />
+        <Dropdown
+          trigger={['click']}
+          menu={{
+            items: widgetDefinitions.map((widget) => ({
+              key: widget.type,
+              icon: widget.icon,
+              label: widget.label,
+              onClick: () => {
+                editor
+                  .chain()
+                  .focus()
+                  .insertContent({
+                    type: 'widget',
+                    attrs: {
+                      widgetType: widget.type,
+                      props: widget.defaultProps ?? {},
+                    },
+                  })
+                  .run();
+              },
+            })),
+          }}
+        >
+          {widgetTrigger}
+        </Dropdown>
         <ToolbarBtn
           icon={<LinkOutlined />}
           active={editor.isActive('link')}
