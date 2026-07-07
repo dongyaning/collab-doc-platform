@@ -335,6 +335,7 @@ export function KnowledgeBaseViewPage() {
   const editor = useEditor(
     {
       editable,
+      autofocus: true,
       extensions: [
         StarterKit.configure({ history: false }),
         CodeBlockLowlight.configure({ lowlight }),
@@ -672,9 +673,31 @@ export function KnowledgeBaseViewPage() {
                   placeholder="Untitled"
                   readOnly={!editable}
                   variant="borderless"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && editor) {
+                      e.preventDefault();
+                      editor.commands.focus('start');
+                    }
+                  }}
                 />
               </div>
-              <div className={styles.editorSurface}>
+              <div
+                className={styles.editorSurface}
+                onMouseDown={(e) => {
+                  if (!editable || !editor) {
+                    return;
+                  }
+
+                  const target = e.target as HTMLElement;
+                  const editorDom = editor.view.dom;
+                  if (editorDom.contains(target) && target !== editorDom) {
+                    return;
+                  }
+
+                  e.preventDefault();
+                  editor.commands.focus('end');
+                }}
+              >
                 <EditorContent editor={editor} />
               </div>
             </div>
