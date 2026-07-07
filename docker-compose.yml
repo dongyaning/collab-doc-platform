@@ -32,8 +32,11 @@ services:
       DATABASE_URL: postgresql://collab:collab@postgres:5432/collab_doc?schema=public
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       JWT_EXPIRES_IN: 7d
+      FILE_STORAGE_LOCAL_DIR: /app/data/uploads
     ports:
       - '3001:3001'
+    volumes:
+      - wiseflow-uploads:/app/data/uploads
 
   web:
     build:
@@ -50,3 +53,4 @@ services:
 
 volumes:
   wiseflow-pgdata:
+  wiseflow-uploads:
