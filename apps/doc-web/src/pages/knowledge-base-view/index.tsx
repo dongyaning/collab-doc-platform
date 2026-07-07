@@ -63,6 +63,7 @@ import {
   type NodeRole,
   type NodeMembersResponse,
 } from '../../lib/endpoints';
+import { useAuthStore } from '../../stores/auth.store';
 import type { TreeNode, KnowledgeBaseTree } from '@wiseflow/shared';
 import styles from './index.module.less';
 
