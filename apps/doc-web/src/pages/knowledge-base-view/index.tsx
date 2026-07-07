@@ -66,6 +66,7 @@ import {
 import { useAuthStore } from '../../stores/auth.store';
 import type { TreeNode, KnowledgeBaseTree } from '@wiseflow/shared';
 import styles from './index.module.less';
+import { useDocLoading } from './use-doc-loading';
 
 const lowlight = createLowlight(common);
 registerPresetWidgets();
@@ -468,6 +469,14 @@ export function KnowledgeBaseViewPage() {
     enabled: !!nodeId && !!previewVersionId,
   });
 
+  const loading = useDocLoading({
+    activeDocLoading: activeDoc.isLoading,
+    treeLoading: treeQuery.isLoading,
+    movePending: moveMutation.isPending,
+    createPending: createMutation.isPending,
+    snapshotPending,
+  });
+
   const [tick, setTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 10_000);
@@ -580,6 +589,11 @@ export function KnowledgeBaseViewPage() {
           </div>
           {!siderCollapsed && (
             <div className={styles.tree}>
+              {loading.isCreating ? (
+                <div className={styles.treeLoading}>
+                  <Spin size="small" />
+                </div>
+              ) : null}
               <Tree
                 treeData={buildTreeData(treeQuery.data.nodes)}
                 onSelect={onSelect}
@@ -596,7 +610,11 @@ export function KnowledgeBaseViewPage() {
       </Sider>
 
       <Content className={styles.contentArea}>
-        {!nodeId || !activeDoc.data ? (
+        {loading.isDocLoading ? (
+          <div className={styles.emptyState}>
+            <Spin size="large" />
+          </div>
+        ) : !nodeId || !activeDoc.data ? (
           <div className={styles.emptyState}>
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -660,59 +678,59 @@ export function KnowledgeBaseViewPage() {
                 <EditorContent editor={editor} />
               </div>
             </div>
-
-            {/* Node-level share: shares only this document/folder */}
-            <Drawer
-              title={`Share: ${activeDoc.data.title || 'Untitled'}`}
-              open={shareOpen && isOwner}
-              onClose={() => setShareOpen(false)}
-              size={360}
-            >
-              <SharePanel
-                nodeId={nodeId!}
-                data={membersQuery.data}
-                loading={membersQuery.isLoading}
-                currentUserId={user?.id ?? ''}
-              />
-            </Drawer>
-
-            {/* KB-level share: shares the entire knowledge base */}
-            <Drawer
-              title="Knowledge base members"
-              open={kbShareOpen}
-              onClose={() => setKbShareOpen(false)}
-              size={360}
-            >
-              <KbSharePanel
-                kbId={kbId!}
-                data={kbMembersQuery.data}
-                loading={kbMembersQuery.isLoading}
-                currentUserId={user?.id ?? ''}
-              />
-            </Drawer>
-
-            <Drawer
-              title="History"
-              open={versionsOpen}
-              onClose={() => setVersionsOpen(false)}
-              size={360}
-            >
-              <VersionsPanel
-                loading={versionsQuery.isLoading}
-                versions={versionsQuery.data ?? []}
-                selectedId={previewVersionId}
-                onSelect={setPreviewVersionId}
-              />
-            </Drawer>
-
-            <VersionPreviewModal
-              open={!!previewVersionId}
-              loading={versionPreviewQuery.isLoading}
-              version={versionPreviewQuery.data}
-              onClose={() => setPreviewVersionId(null)}
-            />
           </div>
         )}
+
+        {/* Node-level share: shares only this document/folder */}
+        <Drawer
+          title={`Share: ${activeDoc.data?.title || 'Untitled'}`}
+          open={shareOpen && !!nodeId && isOwner}
+          onClose={() => setShareOpen(false)}
+          size={360}
+        >
+          <SharePanel
+            nodeId={nodeId!}
+            data={membersQuery.data}
+            loading={membersQuery.isLoading}
+            currentUserId={user?.id ?? ''}
+          />
+        </Drawer>
+
+        {/* KB-level share: shares the entire knowledge base */}
+        <Drawer
+          title="Knowledge base members"
+          open={kbShareOpen}
+          onClose={() => setKbShareOpen(false)}
+          size={360}
+        >
+          <KbSharePanel
+            kbId={kbId!}
+            data={kbMembersQuery.data}
+            loading={kbMembersQuery.isLoading}
+            currentUserId={user?.id ?? ''}
+          />
+        </Drawer>
+
+        <Drawer
+          title="History"
+          open={versionsOpen}
+          onClose={() => setVersionsOpen(false)}
+          size={360}
+        >
+          <VersionsPanel
+            loading={versionsQuery.isLoading}
+            versions={versionsQuery.data ?? []}
+            selectedId={previewVersionId}
+            onSelect={setPreviewVersionId}
+          />
+        </Drawer>
+
+        <VersionPreviewModal
+          open={!!previewVersionId}
+          loading={versionPreviewQuery.isLoading}
+          version={versionPreviewQuery.data}
+          onClose={() => setPreviewVersionId(null)}
+        />
       </Content>
     </Layout>
   );

@@ -59,6 +59,7 @@
 .tree {
   flex: 1;
   overflow: auto;
+  position: relative;
 
   :global(.ant-tree) {
     display: inline-block;
@@ -95,6 +96,16 @@
 
 .treeFolder {
   font-weight: 500;
+}
+
+.treeLoading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.6);
+  z-index: 1;
 }
 
 .contentArea {
