@@ -1,3 +1,4 @@
+import { isAbsolute, join } from 'node:path';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MulterModule } from '@nestjs/platform-express';
@@ -21,7 +22,8 @@ import { LocalStorageService } from './local-storage.service.js';
     {
       provide: FileStorageService,
       useFactory: (config: ConfigService) => {
-        const dir = config.get<string>('FILE_STORAGE_LOCAL_DIR', './uploads');
+        const raw = config.get<string>('FILE_STORAGE_LOCAL_DIR', './uploads');
+        const dir = isAbsolute(raw) ? raw : join(process.cwd(), raw);
         return new FileStorageService(new LocalStorageService(dir), dir);
       },
       inject: [ConfigService],

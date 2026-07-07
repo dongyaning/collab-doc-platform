@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
@@ -15,7 +15,8 @@ async function bootstrap() {
 
   // Serve uploaded files as static assets (local storage driver).
   const uploadsDir = process.env.FILE_STORAGE_LOCAL_DIR ?? './uploads';
-  app.useStaticAssets(join(process.cwd(), uploadsDir), { prefix: '/uploads' });
+  const resolvedUploadsDir = isAbsolute(uploadsDir) ? uploadsDir : join(process.cwd(), uploadsDir);
+  app.useStaticAssets(resolvedUploadsDir, { prefix: '/uploads' });
 
   app.setGlobalPrefix('api', { exclude: ['collab', 'uploads'] });
 
