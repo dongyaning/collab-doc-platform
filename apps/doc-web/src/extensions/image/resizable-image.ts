@@ -9,7 +9,7 @@ export const ResizableImage = Image.extend<ResizableImageOptions>({
   addOptions() {
     return {
       ...this.parent?.(),
-      defaultWidth: '65%',
+      defaultWidth: '35%',
     };
   },
 
