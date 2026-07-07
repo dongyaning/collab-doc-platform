@@ -32,7 +32,6 @@ import {
   Input,
   Layout,
   List,
-  message,
   Modal,
   Popover,
   Result,
@@ -59,13 +58,11 @@ import {
 import {
   knowledgeBasesApi,
   nodesApi,
-  filesApi,
   type NodeVersion,
   type NodeVersionDetail,
   type NodeRole,
   type NodeMembersResponse,
 } from '../../lib/endpoints';
-import { useAuthStore } from '../../stores/auth.store';
 import type { TreeNode, KnowledgeBaseTree } from '@wiseflow/shared';
 import styles from './index.module.less';
 
