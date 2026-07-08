@@ -1,8 +1,9 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.module.js';
 import { KnowledgeBasesService } from '../knowledge-bases/knowledge-bases.service.js';
-import type { Prisma, NodeType, NodeRole } from '@prisma/client';
+import type { NodeType, NodeRole } from '@prisma/client';
 import { RoomManager } from '../collab/room-manager.js';
+import * as Y from 'yjs';
 
 @Injectable()
 export class NodesService {
@@ -23,6 +24,15 @@ export class NodesService {
     return { ...node, role };
   }
 
+  async getContent(userId: string, nodeId: string) {
+    const node = await this.prisma.node.findUnique({
+      where: { id: nodeId },
+    });
+    if (!node) throw new NotFoundException();
+    await this.kbs.requireNodeRole(userId, nodeId, 'VIEWER');
+    return this.rooms.getDocumentContent(nodeId);
+  }
+
   async create(
     userId: string,
     kbId: string,
@@ -30,7 +40,6 @@ export class NodesService {
       title?: string;
       type?: NodeType;
       parentId?: string | null;
-      content?: Prisma.InputJsonValue;
     }
   ) {
     await this.kbs.requireRole(userId, kbId, 'EDITOR');
@@ -44,6 +53,10 @@ export class NodesService {
     });
     const nextOrder = (siblings[0]?.sortOrder ?? -1) + 1;
 
+    // seed an empty Yjs binary state
+    const emptyYdoc = new Y.Doc();
+    const yjsState = Buffer.from(Y.encodeStateAsUpdate(emptyYdoc));
+
     const node = await this.prisma.node.create({
       data: {
         kbId,
@@ -51,7 +64,7 @@ export class NodesService {
         type: data.type ?? 'DOC',
         title: data.title ?? 'Untitled',
         sortOrder: nextOrder,
-        content: data.content ?? ({ type: 'doc', content: [] } as Prisma.InputJsonValue),
+        yjsState,
       },
     });
     return node;
@@ -62,7 +75,6 @@ export class NodesService {
     nodeId: string,
     patch: {
       title?: string;
-      content?: Prisma.InputJsonValue;
       type?: NodeType;
     }
   ) {
@@ -76,7 +88,6 @@ export class NodesService {
       where: { id: nodeId },
       data: {
         ...(patch.title !== undefined ? { title: patch.title } : {}),
-        ...(patch.content !== undefined ? { content: patch.content } : {}),
         ...(patch.type !== undefined ? { type: patch.type } : {}),
       },
     });

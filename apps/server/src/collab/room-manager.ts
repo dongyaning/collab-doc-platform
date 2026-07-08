@@ -7,6 +7,7 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import type { WebSocket } from 'ws';
 import { PrismaService } from '../prisma/prisma.module.js';
 import { Room } from './room.js';
+import { decodeYjsStateToProseMirror } from './yjs-json-codec.js';
 import type { NodeRole } from '@prisma/client';
 
 const MESSAGE_SYNC = 0;
@@ -16,16 +17,7 @@ const PERSIST_DEBOUNCE_MS = 2000;
 const PERSIST_MAX_UPDATES = 50;
 const SNAPSHOT_EVERY_UPDATES = 50;
 const SNAPSHOT_MAX_INTERVAL_MS = 30 * 60 * 1000;
-const TIPTAP_FRAGMENT_NAME = 'default';
 const SYNC_STEP1 = 0;
-
-/** Yjs XML attributes are always strings; coerce numeric-looking ones back for Tiptap JSON. */
-function coerceAttr(value: string): unknown {
-  if (value === 'true') return true;
-  if (value === 'false') return false;
-  if (value !== '' && !Number.isNaN(Number(value))) return Number(value);
-  return value;
-}
 
 /**
  * Owns the in-memory `Room` map and orchestrates the y-protocol message flow.
@@ -61,18 +53,13 @@ export class RoomManager {
   private async loadInitialState(room: Room): Promise<void> {
     const rec = await this.prisma.node.findUnique({
       where: { id: room.docId },
-      select: { yjsState: true, content: true },
+      select: { yjsState: true },
     });
 
-    if (!rec) {
-      this.log.warn(`room ${room.docId}: doc not found, starting empty`);
-      room.loaded = true;
-      return;
-    }
-    if (rec.yjsState && rec.yjsState.length > 0) {
+    if (rec) {
       Y.applyUpdate(room.ydoc, new Uint8Array(rec.yjsState));
     } else {
-      this.seedLegacyContent(room, rec.content);
+      this.log.warn(`room ${room.docId}: doc not found, starting empty`);
     }
     room.loaded = true;
   }
@@ -193,61 +180,6 @@ export class RoomManager {
     if (messageType !== MESSAGE_SYNC) return true;
     const syncType = decoding.readVarUint(decoder);
     return syncType === SYNC_STEP1;
-  }
-
-  private seedLegacyContent(room: Room, content: unknown): void {
-    const root = this.toYXmlChildren(content);
-    if (root.length === 0) return;
-    room.ydoc.transact(() => {
-      const fragment = room.ydoc.getXmlFragment(TIPTAP_FRAGMENT_NAME);
-      if (fragment.length === 0) {
-        fragment.insert(0, root);
-      }
-    }, 'legacy-content');
-  }
-
-  private toYXmlChildren(node: unknown): Array<Y.XmlElement | Y.XmlText> {
-    if (!node || typeof node !== 'object') return [];
-    const typed = node as {
-      type?: unknown;
-      text?: unknown;
-      attrs?: unknown;
-      content?: unknown;
-      marks?: unknown;
-    };
-    if (typed.type === 'doc') {
-      return Array.isArray(typed.content)
-        ? typed.content.flatMap((child) => this.toYXmlChildren(child))
-        : [];
-    }
-    if (typed.type === 'text') {
-      if (typeof typed.text !== 'string' || typed.text.length === 0) return [];
-      const text = new Y.XmlText();
-      text.insert(0, typed.text);
-      if (Array.isArray(typed.marks)) {
-        for (const mark of typed.marks) {
-          const m = mark as { type?: unknown; attrs?: Record<string, unknown> };
-          if (typeof m.type === 'string') {
-            text.format(0, typed.text.length, { [m.type]: m.attrs ?? true });
-          }
-        }
-      }
-      return [text];
-    }
-    if (typeof typed.type !== 'string') return [];
-    const element = new Y.XmlElement(typed.type);
-    if (typed.attrs && typeof typed.attrs === 'object') {
-      for (const [key, value] of Object.entries(typed.attrs)) {
-        if (value !== null && value !== undefined) element.setAttribute(key, String(value));
-      }
-    }
-    const children = Array.isArray(typed.content)
-      ? typed.content.flatMap((child) => this.toYXmlChildren(child))
-      : [];
-    if (children.length > 0) {
-      element.insert(0, children);
-    }
-    return [element];
   }
 
   /** Drop a connection from its room; if empty, persist + free the room. */
@@ -376,6 +308,19 @@ export class RoomManager {
     return created;
   }
 
+  /**
+   * Decode persisted yjsState to Tiptap JSON for REST clients.
+   */
+  async getDocumentContent(docId: string): Promise<unknown> {
+    const rec = await this.prisma.node.findUnique({
+      where: { id: docId },
+      select: { yjsState: true },
+    });
+    if (!rec) throw new NotFoundException('document not found');
+
+    return decodeYjsStateToProseMirror(new Uint8Array(rec.yjsState));
+  }
+
   async getVersionSnapshot(docId: string, versionId: string) {
     const target = await this.prisma.nodeVersion.findFirst({
       where: { id: versionId, nodeId: docId },
@@ -389,10 +334,7 @@ export class RoomManager {
       },
     });
     if (!target) throw new NotFoundException('version not found');
-    const ydoc = new Y.Doc();
-    Y.applyUpdate(ydoc, new Uint8Array(target.yjsState));
-    const content = this.fromYXmlFragment(ydoc.getXmlFragment(TIPTAP_FRAGMENT_NAME));
-    ydoc.destroy();
+    const content = decodeYjsStateToProseMirror(new Uint8Array(target.yjsState));
     return {
       id: target.id,
       version: target.version,
@@ -404,34 +346,6 @@ export class RoomManager {
   }
 
   // ---------- helpers ----------
-
-  private fromYXmlFragment(fragment: Y.XmlFragment) {
-    return {
-      type: 'doc',
-      content: fragment.toArray().flatMap((child) => this.fromYXmlNode(child)),
-    };
-  }
-
-  private fromYXmlNode(node: Y.XmlElement | Y.XmlText | Y.XmlHook): unknown[] {
-    if (node instanceof Y.XmlText) {
-      return [{ type: 'text', text: node.toString() }];
-    }
-    if (!(node instanceof Y.XmlElement)) return [];
-    const rawAttrs = node.getAttributes();
-    const attrs: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(rawAttrs)) {
-      if (value === undefined) continue;
-      attrs[key] = coerceAttr(value);
-    }
-    const children = node.toArray().flatMap((child) => this.fromYXmlNode(child));
-    return [
-      {
-        type: node.nodeName,
-        ...(Object.keys(attrs).length > 0 ? { attrs } : {}),
-        ...(children.length > 0 ? { content: children } : {}),
-      },
-    ];
-  }
 
   private send(ws: WebSocket, data: Uint8Array): void {
     if (ws.readyState !== ws.OPEN) return;

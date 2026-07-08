@@ -69,10 +69,8 @@ model Node {
   title     String   @default("Untitled")
   sortOrder Int      @default(0)
 
-  /// Legacy Tiptap JSON (fallback when no Yjs state).
-  content   Json     @default("{}")
-  /// Latest Yjs document state.
-  yjsState  Bytes?
+  /// Latest Yjs document state (never null — seeded on creation).
+  yjsState  Bytes
   /// Monotonic version, bumped on each persisted snapshot.
   version   Int      @default(0)
 

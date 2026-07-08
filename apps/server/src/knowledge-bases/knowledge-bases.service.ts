@@ -1,11 +1,8 @@
-import {
-  ForbiddenException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.module.js';
-import type { NodeRole, Prisma } from '@prisma/client';
+import type { NodeRole } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
+import * as Y from 'yjs';
 import type { TreeNode } from '@wiseflow/shared';
 
 const ROLE_RANK: Record<NodeRole, number> = {
@@ -29,10 +26,7 @@ export class KnowledgeBasesService {
   async list(userId: string) {
     const rows = await this.prisma.knowledgeBase.findMany({
       where: {
-        OR: [
-          { ownerId: userId },
-          { rootNode: { members: { some: { userId } } } },
-        ],
+        OR: [{ ownerId: userId }, { rootNode: { members: { some: { userId } } } }],
       },
       orderBy: { updatedAt: 'desc' },
       include: {
@@ -67,7 +61,7 @@ export class KnowledgeBasesService {
         kbId: kb.id,
         type: 'FOLDER',
         title: kb.title,
-        content: { type: 'doc', content: [] },
+        yjsState: Buffer.from(Y.encodeStateAsUpdate(new Y.Doc())),
       },
     });
     await this.prisma.knowledgeBase.update({
@@ -97,7 +91,13 @@ export class KnowledgeBasesService {
     const hasKbAccess = kbRole !== null;
 
     let role: EffectiveRole;
-    let allNodes: Array<{ id: string; parentId: string | null; type: string; title: string; sortOrder: number }>;
+    let allNodes: Array<{
+      id: string;
+      parentId: string | null;
+      type: string;
+      title: string;
+      sortOrder: number;
+    }>;
 
     if (hasKbAccess) {
       // User has KB-level access — full tree + require at least VIEWER
@@ -131,11 +131,10 @@ export class KnowledgeBasesService {
         for (;;) {
           if (!curId) break;
           accessibleIds.add(curId);
-          const rec: { parentId: string | null } | null =
-            await this.prisma.node.findUnique({
-              where: { id: curId },
-              select: { parentId: true },
-            });
+          const rec: { parentId: string | null } | null = await this.prisma.node.findUnique({
+            where: { id: curId },
+            select: { parentId: true },
+          });
           curId = rec?.parentId ?? null;
         }
       }
@@ -321,10 +320,7 @@ export class KnowledgeBasesService {
   }
 
   /** Resolve effective role for any node by walking the parent chain. */
-  async getNodeEffectiveRole(
-    userId: string,
-    nodeId: string
-  ): Promise<EffectiveRole | null> {
+  async getNodeEffectiveRole(userId: string, nodeId: string): Promise<EffectiveRole | null> {
     let currentId: string | null = nodeId;
     let best: EffectiveRole | null = null;
 
@@ -348,10 +344,10 @@ export class KnowledgeBasesService {
           }
         }
       }
-      const parentInfo = await this.prisma.node.findUnique({
+      const parentInfo = (await this.prisma.node.findUnique({
         where: { id: currentId },
         select: { parentId: true, kb: { select: { ownerId: true } } },
-      }) as { parentId: string | null; kb: { ownerId: string } } | null;
+      })) as { parentId: string | null; kb: { ownerId: string } } | null;
       if (!parentInfo) break;
       if (parentInfo.kb.ownerId === userId) return 'OWNER';
       currentId = parentInfo.parentId;
@@ -359,11 +355,7 @@ export class KnowledgeBasesService {
     return best;
   }
 
-  async requireNodeRole(
-    userId: string,
-    nodeId: string,
-    min: NodeRole
-  ): Promise<EffectiveRole> {
+  async requireNodeRole(userId: string, nodeId: string, min: NodeRole): Promise<EffectiveRole> {
     const role = await this.getNodeEffectiveRole(userId, nodeId);
     if (!role) throw new NotFoundException();
     if (ROLE_RANK[role] < ROLE_RANK[min]) throw new ForbiddenException();

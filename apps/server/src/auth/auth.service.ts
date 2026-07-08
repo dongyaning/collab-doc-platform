@@ -1,11 +1,7 @@
-import {
-  ConflictException,
-  Inject,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { ConflictException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcryptjs';
+import * as Y from 'yjs';
 import { PrismaService } from '../prisma/prisma.module.js';
 
 export interface JwtPayload {
@@ -48,7 +44,7 @@ export class AuthService {
         kbId: kb.id,
         type: 'FOLDER',
         title: kb.title,
-        content: { type: 'doc', content: [] },
+        yjsState: Buffer.from(Y.encodeStateAsUpdate(new Y.Doc())),
       },
     });
     await this.prisma.knowledgeBase.update({

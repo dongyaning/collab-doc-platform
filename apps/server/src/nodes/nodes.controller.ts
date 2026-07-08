@@ -9,11 +9,11 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { IsEmail, IsIn, IsInt, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsEmail, IsIn, IsInt, IsOptional, IsString, MaxLength } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { CurrentUser, type AuthUser } from '../auth/current-user.decorator.js';
 import { NodesService } from './nodes.service.js';
-import type { NodeType, NodeRole, Prisma } from '@prisma/client';
+import type { NodeType, NodeRole } from '@prisma/client';
 
 class CreateNodeDto {
   @IsString()
@@ -39,10 +39,6 @@ class UpdateNodeDto {
   @IsString()
   @MaxLength(200)
   title?: string;
-
-  @IsOptional()
-  @IsObject()
-  content?: Record<string, unknown>;
 }
 
 class MoveNodeDto {
@@ -82,7 +78,7 @@ class UpdateMemberDto {
   includeChildren?: boolean;
 }
 
-  @UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard)
 @Controller('nodes')
 export class NodesController {
   constructor(@Inject(NodesService) private readonly nodes: NodesService) {}
@@ -95,6 +91,11 @@ export class NodesController {
   @Get(':id')
   get(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.nodes.get(user.id, id);
+  }
+
+  @Get(':id/content')
+  getContent(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.nodes.getContent(user.id, id);
   }
 
   @Post()
@@ -110,7 +111,6 @@ export class NodesController {
   update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateNodeDto) {
     return this.nodes.update(user.id, id, {
       title: dto.title,
-      content: dto.content as Prisma.InputJsonValue | undefined,
     });
   }
 

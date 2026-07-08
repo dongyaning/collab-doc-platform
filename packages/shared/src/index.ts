@@ -49,7 +49,6 @@ export interface NodeDetail {
   type: NodeType;
   title: string;
   sortOrder: number;
-  content: unknown;
   ownerId: string;
   role?: string;
   createdAt: string;
