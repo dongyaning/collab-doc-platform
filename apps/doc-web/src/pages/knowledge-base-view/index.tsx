@@ -35,6 +35,7 @@ import {
   Modal,
   Popover,
   Result,
+  Segmented,
   Select,
   Space,
   Spin,
@@ -58,6 +59,8 @@ import {
 import {
   knowledgeBasesApi,
   nodesApi,
+  type AccessRequest,
+  type AccessRequestScope,
   type NodeVersion,
   type NodeVersionDetail,
   type NodeRole,
@@ -76,6 +79,16 @@ const { Text } = Typography;
 type ConnState = 'connecting' | 'connected' | 'disconnected';
 type AssignableRole = Exclude<NodeRole, 'OWNER'>;
 
+type ApiError = {
+  response?: {
+    status?: number;
+    data?: {
+      code?: string;
+      message?: string;
+    };
+  };
+};
+
 const ASSIGNABLE_ROLES: AssignableRole[] = ['EDITOR', 'COMMENTER', 'VIEWER'];
 const ROLE_LABEL: Record<NodeRole, string> = {
   OWNER: 'Owner',
@@ -92,6 +105,15 @@ const ROLE_COLOR: Record<NodeRole, string> = {
 
 function canEdit(role: NodeRole | undefined): boolean {
   return role === 'OWNER' || role === 'EDITOR';
+}
+
+function isKnowledgeBaseAccessDenied(error: unknown): boolean {
+  const apiError = error as ApiError;
+  return apiError.response?.status === 403 && apiError.response.data?.code === 'KB_ACCESS_DENIED';
+}
+
+function accessErrorMessage(error: unknown, fallback: string): string {
+  return (error as ApiError).response?.data?.message ?? fallback;
 }
 
 const COLLAB_WS_URL =
@@ -183,6 +205,13 @@ export function KnowledgeBaseViewPage() {
     queryFn: () => knowledgeBasesApi.getTree(kbId!),
     enabled: !!kbId,
   });
+  const accessDenied = treeQuery.isError && isKnowledgeBaseAccessDenied(treeQuery.error);
+
+  const myAccessRequestQuery = useQuery<AccessRequest | null>({
+    queryKey: ['kb-access-request-my', kbId],
+    queryFn: () => knowledgeBasesApi.getMyAccessRequest(kbId!),
+    enabled: !!kbId && accessDenied,
+  });
 
   const activeDoc = useQuery({
     queryKey: ['node', nodeId],
@@ -195,6 +224,7 @@ export function KnowledgeBaseViewPage() {
     (activeDoc.data?.role as NodeRole | undefined) ??
     (treeQuery.data?.kb?.role as NodeRole | undefined);
   const canUserEdit = canEdit(userRole);
+  const isOwner = userRole === 'OWNER';
   const requestedMode = searchParams.get('mode');
   const editable = canUserEdit && isEditing;
 
@@ -556,6 +586,11 @@ export function KnowledgeBaseViewPage() {
     queryFn: () => knowledgeBasesApi.listMembers(kbId!),
     enabled: kbShareOpen && !!kbId,
   });
+  const accessRequestsQuery = useQuery<AccessRequest[]>({
+    queryKey: ['kb-access-requests', kbId],
+    queryFn: () => knowledgeBasesApi.listAccessRequests(kbId!),
+    enabled: kbShareOpen && !!kbId && isOwner,
+  });
 
   function onSaveSnapshot() {
     let label = '';
@@ -625,7 +660,6 @@ export function KnowledgeBaseViewPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDoc, tick]);
 
-  const isOwner = userRole === 'OWNER';
   const [siderCollapsed, setSiderCollapsed] = useState(false);
 
   // ---- loading / error states ----
@@ -636,6 +670,21 @@ export function KnowledgeBaseViewPage() {
           <div className={styles.loading}>
             <Spin size="large" />
           </div>
+        </Content>
+      </Layout>
+    );
+  }
+
+  if (accessDenied) {
+    return (
+      <Layout className={styles.layout}>
+        <Content className={styles.contentArea}>
+          <AccessRequestPanel
+            kbId={kbId!}
+            nodeId={nodeId}
+            request={myAccessRequestQuery.data}
+            loading={myAccessRequestQuery.isLoading}
+          />
         </Content>
       </Layout>
     );
@@ -863,6 +912,8 @@ export function KnowledgeBaseViewPage() {
             data={kbMembersQuery.data}
             loading={kbMembersQuery.isLoading}
             currentUserId={user?.id ?? ''}
+            accessRequests={accessRequestsQuery.data ?? []}
+            accessRequestsLoading={accessRequestsQuery.isLoading}
           />
         </Drawer>
 
@@ -888,6 +939,103 @@ export function KnowledgeBaseViewPage() {
         />
       </Content>
     </Layout>
+  );
+}
+
+function AccessRequestPanel({
+  kbId,
+  nodeId,
+  request,
+  loading,
+}: {
+  kbId: string;
+  nodeId?: string;
+  request: AccessRequest | null | undefined;
+  loading: boolean;
+}) {
+  const qc = useQueryClient();
+  const [scope, setScope] = useState<AccessRequestScope>(nodeId ? 'NODE' : 'KNOWLEDGE_BASE');
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const createMutation = useMutation({
+    mutationFn: () =>
+      knowledgeBasesApi.createAccessRequest(kbId, {
+        scope,
+        nodeId: scope === 'NODE' ? nodeId : undefined,
+        requestedRole: 'VIEWER',
+        message: message.trim() || undefined,
+      }),
+    onSuccess: async () => {
+      setError(null);
+      await qc.invalidateQueries({ queryKey: ['kb-access-request-my', kbId] });
+    },
+    onError: (err: unknown) => {
+      setError(accessErrorMessage(err, 'Failed to submit access request'));
+    },
+  });
+
+  const isPending = request?.status === 'PENDING';
+  const isApproved = request?.status === 'APPROVED';
+  const isRejected = request?.status === 'REJECTED';
+  const disableSubmit =
+    loading || createMutation.isPending || (scope === 'NODE' && !nodeId) || isPending;
+
+  return (
+    <div className={styles.accessRequestShell}>
+      <div className={styles.accessRequestBox}>
+        <Result
+          status={isApproved ? 'success' : '403'}
+          title={isApproved ? 'Access granted' : 'Access required'}
+          subTitle={
+            isPending
+              ? 'Your request has been sent. The owner can approve it from the knowledge base members panel.'
+              : isRejected
+                ? 'Your previous request was rejected. You can submit a new request.'
+                : 'Ask the owner for permission to view this knowledge base or document.'
+          }
+          extra={
+            isApproved ? (
+              <Button type="primary" onClick={() => window.location.reload()}>
+                Reload
+              </Button>
+            ) : null
+          }
+        />
+        {!isApproved ? (
+          <div className={styles.accessRequestForm}>
+            <Text className={styles.formLabel}>Access scope</Text>
+            <Segmented<AccessRequestScope>
+              block
+              value={scope}
+              onChange={setScope}
+              options={[
+                ...(nodeId ? [{ label: 'Current document', value: 'NODE' as const }] : []),
+                { label: 'Entire knowledge base', value: 'KNOWLEDGE_BASE' as const },
+              ]}
+            />
+            <Input.TextArea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="Reason for access (optional)"
+              autoSize={{ minRows: 3, maxRows: 5 }}
+              maxLength={500}
+              showCount
+            />
+            {error ? <Text type="danger">{error}</Text> : null}
+            <Button
+              type="primary"
+              block
+              disabled={disableSubmit}
+              loading={createMutation.isPending}
+              onClick={() => createMutation.mutate()}
+            >
+              {isPending ? 'Request pending' : 'Request access'}
+            </Button>
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -1072,11 +1220,15 @@ function KbSharePanel({
   data,
   loading,
   currentUserId,
+  accessRequests,
+  accessRequestsLoading,
 }: {
   kbId: string;
   data: NodeMembersResponse | undefined;
   loading: boolean;
   currentUserId: string;
+  accessRequests: AccessRequest[];
+  accessRequestsLoading: boolean;
 }) {
   const qc = useQueryClient();
   const [email, setEmail] = useState('');
@@ -1110,6 +1262,7 @@ function KbSharePanel({
 
   return (
     <div>
+      <AccessRequestsPanel kbId={kbId} requests={accessRequests} loading={accessRequestsLoading} />
       <Space.Compact className={styles.inviteInputGroup}>
         <Input
           type="email"
@@ -1209,6 +1362,155 @@ function KbSharePanel({
                   description={<Text type="secondary">{m.email}</Text>}
                 />
                 {isOwnerRow ? <Tag color="blue">Owner</Tag> : null}
+              </List.Item>
+            );
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function AccessRequestsPanel({
+  kbId,
+  requests,
+  loading,
+}: {
+  kbId: string;
+  requests: AccessRequest[];
+  loading: boolean;
+}) {
+  const qc = useQueryClient();
+  const [drafts, setDrafts] = useState<
+    Record<string, { role: AssignableRole; scope: AccessRequestScope; includeChildren?: boolean }>
+  >({});
+
+  const reviewMutation = useMutation({
+    mutationFn: ({
+      request,
+      status,
+    }: {
+      request: AccessRequest;
+      status: 'APPROVED' | 'REJECTED';
+    }) => {
+      const draft = drafts[request.id] ?? {
+        role: request.requestedRole,
+        scope: request.scope,
+        includeChildren: request.requestedIncludeChildren,
+      };
+      return knowledgeBasesApi.reviewAccessRequest(kbId, request.id, {
+        status,
+        role: draft.role,
+        scope: draft.scope,
+        nodeId: draft.scope === 'NODE' ? (request.nodeId ?? undefined) : undefined,
+        includeChildren: draft.includeChildren,
+      });
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['kb-access-requests', kbId] }),
+        qc.invalidateQueries({ queryKey: ['kb-members', kbId] }),
+        qc.invalidateQueries({ queryKey: ['kb-tree', kbId] }),
+      ]);
+    },
+  });
+
+  const pendingCount = requests.filter((request) => request.status === 'PENDING').length;
+
+  return (
+    <div className={styles.accessRequestsPanel}>
+      <div className={styles.panelSectionTitle}>
+        <Text strong>Access requests</Text>
+        {pendingCount > 0 ? <Badge count={pendingCount} size="small" /> : null}
+      </div>
+      {loading ? (
+        <div className={styles.loading}>
+          <Spin />
+        </div>
+      ) : requests.length === 0 ? (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No access requests." />
+      ) : (
+        <List
+          className={styles.accessRequestList}
+          dataSource={requests}
+          renderItem={(request) => {
+            const draft = drafts[request.id] ?? {
+              role: request.requestedRole,
+              scope: request.scope,
+              includeChildren: request.requestedIncludeChildren,
+            };
+            const isPending = request.status === 'PENDING';
+            const scopeLabel =
+              request.scope === 'KNOWLEDGE_BASE'
+                ? 'Entire knowledge base'
+                : request.node?.title
+                  ? `Node: ${request.node.title}`
+                  : 'Current node';
+            return (
+              <List.Item>
+                <div className={styles.accessRequestItem}>
+                  <div>
+                    <Text strong>{request.requester?.name ?? request.requesterId}</Text>
+                    <Tag className={styles.requestStatusTag}>{request.status}</Tag>
+                  </div>
+                  <Text type="secondary">
+                    {request.requester?.email ?? ''} · {scopeLabel} ·{' '}
+                    {ROLE_LABEL[request.requestedRole]}
+                  </Text>
+                  {request.message ? <Text>{request.message}</Text> : null}
+                  {isPending ? (
+                    <Space wrap>
+                      <Select<AccessRequestScope>
+                        size="small"
+                        value={draft.scope}
+                        className={styles.scopeSelect}
+                        onChange={(nextScope) =>
+                          setDrafts((prev) => ({
+                            ...prev,
+                            [request.id]: { ...draft, scope: nextScope },
+                          }))
+                        }
+                        options={[
+                          ...(request.nodeId
+                            ? [{ value: 'NODE' as const, label: 'Current node' }]
+                            : []),
+                          { value: 'KNOWLEDGE_BASE' as const, label: 'Entire KB' },
+                        ]}
+                      />
+                      <Select<AssignableRole>
+                        size="small"
+                        value={draft.role}
+                        className={styles.roleSelect}
+                        onChange={(nextRole) =>
+                          setDrafts((prev) => ({
+                            ...prev,
+                            [request.id]: { ...draft, role: nextRole },
+                          }))
+                        }
+                        options={ASSIGNABLE_ROLES.map((role) => ({
+                          value: role,
+                          label: ROLE_LABEL[role],
+                        }))}
+                      />
+                      <Button
+                        size="small"
+                        type="primary"
+                        loading={reviewMutation.isPending}
+                        onClick={() => reviewMutation.mutate({ request, status: 'APPROVED' })}
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        size="small"
+                        danger
+                        loading={reviewMutation.isPending}
+                        onClick={() => reviewMutation.mutate({ request, status: 'REJECTED' })}
+                      >
+                        Reject
+                      </Button>
+                    </Space>
+                  ) : null}
+                </div>
               </List.Item>
             );
           }}

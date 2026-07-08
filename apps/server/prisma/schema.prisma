@@ -16,6 +16,18 @@ enum NodeRole {
   VIEWER
 }
 
+enum AccessRequestScope {
+  KNOWLEDGE_BASE
+  NODE
+}
+
+enum AccessRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELED
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -27,8 +39,10 @@ model User {
   /// The user's default knowledge base (created on registration).
   defaultKbId  String?
 
-  ownedKbs     KnowledgeBase[] @relation("KbOwner")
-  nodeMembers  NodeMember[]
+  ownedKbs               KnowledgeBase[] @relation("KbOwner")
+  nodeMembers            NodeMember[]
+  accessRequests         AccessRequest[] @relation("AccessRequestRequester")
+  reviewedAccessRequests AccessRequest[] @relation("AccessRequestReviewer")
 
   @@index([email])
 }
@@ -50,7 +64,8 @@ model KnowledgeBase {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  nodes       Node[]   @relation("KbNodes")
+  nodes          Node[]          @relation("KbNodes")
+  accessRequests AccessRequest[]
 
   @@index([ownerId])
   @@index([updatedAt])
@@ -82,8 +97,9 @@ model Node {
   parent    Node?         @relation("NodeTree", fields: [parentId], references: [id], onDelete: SetNull)
   children  Node[]        @relation("NodeTree")
 
-  versions  NodeVersion[]
-  members   NodeMember[]
+  versions       NodeVersion[]
+  members        NodeMember[]
+  accessRequests AccessRequest[]
 
   @@index([kbId, parentId])
   @@index([kbId, sortOrder])
@@ -122,6 +138,35 @@ model NodeMember {
 
   @@id([nodeId, userId])
   @@index([userId])
+}
+
+model AccessRequest {
+  id                       String              @id @default(cuid())
+  kbId                     String
+  nodeId                   String?
+  scope                    AccessRequestScope
+  requesterId              String
+  requestedRole            NodeRole            @default(VIEWER)
+  requestedIncludeChildren Boolean             @default(false)
+  message                  String?
+  status                   AccessRequestStatus @default(PENDING)
+  reviewerId               String?
+  approvedRole             NodeRole?
+  approvedScope            AccessRequestScope?
+  approvedNodeId           String?
+  approvedIncludeChildren  Boolean?
+  reviewedAt               DateTime?
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
+
+  kb        KnowledgeBase @relation(fields: [kbId], references: [id], onDelete: Cascade)
+  node      Node?         @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  requester User          @relation("AccessRequestRequester", fields: [requesterId], references: [id])
+  reviewer  User?         @relation("AccessRequestReviewer", fields: [reviewerId], references: [id])
+
+  @@index([kbId, status])
+  @@index([nodeId])
+  @@index([requesterId, status])
 }
 
 /// Uploaded file metadata.

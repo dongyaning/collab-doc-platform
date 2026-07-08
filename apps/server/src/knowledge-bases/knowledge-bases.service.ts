@@ -1,6 +1,7 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { AccessRequestScope, AccessRequestStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.module.js';
-import type { NodeRole } from '@prisma/client';
+import type { NodeRole, NodeType } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 import * as Y from 'yjs';
 import type { TreeNode } from '@wiseflow/shared';
@@ -112,7 +113,9 @@ export class KnowledgeBasesService {
       const memberCount = await this.prisma.nodeMember.count({
         where: { userId, node: { kbId } },
       });
-      if (memberCount === 0) throw new NotFoundException();
+      if (memberCount === 0) {
+        throw new ForbiddenException({ code: 'KB_ACCESS_DENIED', message: 'Access denied' });
+      }
 
       // Resolve effective role from all accessible nodes
       role = (await this.getNodeEffectiveRole(userId, kb.rootNodeId ?? '')) ?? 'VIEWER';
@@ -197,6 +200,175 @@ export class KnowledgeBasesService {
     return { ok: true };
   }
 
+  // ---------- access requests ----------
+
+  async createAccessRequest(
+    userId: string,
+    kbId: string,
+    dto: {
+      scope: AccessRequestScope;
+      nodeId?: string;
+      requestedRole?: NodeRole;
+      includeChildren?: boolean;
+      message?: string;
+    }
+  ) {
+    const kb = await this.prisma.knowledgeBase.findUnique({
+      where: { id: kbId },
+      select: { id: true, ownerId: true, rootNodeId: true },
+    });
+    if (!kb) throw new NotFoundException();
+    if (kb.ownerId === userId) {
+      throw new ForbiddenException('owner already has access');
+    }
+
+    const existingRole = await this.getRequestTargetRole(userId, kbId, dto.scope, dto.nodeId);
+    if (existingRole) {
+      throw new ForbiddenException('you already have access');
+    }
+
+    const target = await this.resolveAccessRequestTarget(kbId, dto.scope, dto.nodeId);
+    const requestedRole = dto.requestedRole ?? 'VIEWER';
+    if (requestedRole === 'OWNER') {
+      throw new ForbiddenException('cannot request OWNER role');
+    }
+
+    const requestedIncludeChildren =
+      dto.includeChildren ?? this.defaultIncludeChildren(dto.scope, target.node?.type);
+    const pending = await this.prisma.accessRequest.findFirst({
+      where: {
+        kbId,
+        requesterId: userId,
+        status: AccessRequestStatus.PENDING,
+        scope: dto.scope,
+        nodeId: target.nodeId,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (pending) {
+      return this.toAccessRequestDto(pending);
+    }
+
+    const request = await this.prisma.accessRequest.create({
+      data: {
+        kbId,
+        nodeId: target.nodeId,
+        scope: dto.scope,
+        requesterId: userId,
+        requestedRole,
+        requestedIncludeChildren,
+        message: dto.message?.trim() || null,
+      },
+    });
+    return this.toAccessRequestDto(request);
+  }
+
+  async getMyAccessRequest(userId: string, kbId: string) {
+    const request = await this.prisma.accessRequest.findFirst({
+      where: { kbId, requesterId: userId },
+      orderBy: { createdAt: 'desc' },
+      include: { node: { select: { id: true, title: true, type: true } } },
+    });
+    return request ? this.toAccessRequestDto(request) : null;
+  }
+
+  async listAccessRequests(userId: string, kbId: string) {
+    await this.requireRole(userId, kbId, 'OWNER');
+    const requests = await this.prisma.accessRequest.findMany({
+      where: { kbId },
+      orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
+      include: {
+        requester: { select: { id: true, email: true, name: true } },
+        node: { select: { id: true, title: true, type: true } },
+      },
+    });
+    return requests.map((request) => this.toAccessRequestDto(request));
+  }
+
+  async reviewAccessRequest(
+    userId: string,
+    kbId: string,
+    requestId: string,
+    dto: {
+      status: AccessRequestStatus;
+      role?: NodeRole;
+      scope?: AccessRequestScope;
+      nodeId?: string;
+      includeChildren?: boolean;
+    }
+  ) {
+    const kb = await this.prisma.knowledgeBase.findUnique({
+      where: { id: kbId },
+      select: { rootNodeId: true },
+    });
+    if (!kb) throw new NotFoundException();
+    await this.requireRole(userId, kbId, 'OWNER');
+
+    const request = await this.prisma.accessRequest.findUnique({ where: { id: requestId } });
+    if (!request || request.kbId !== kbId) throw new NotFoundException();
+    if (request.status !== AccessRequestStatus.PENDING) {
+      throw new ForbiddenException('request has already been reviewed');
+    }
+    if (dto.status === AccessRequestStatus.PENDING || dto.status === AccessRequestStatus.CANCELED) {
+      throw new ForbiddenException('invalid review status');
+    }
+
+    if (dto.status === AccessRequestStatus.REJECTED) {
+      const rejected = await this.prisma.accessRequest.update({
+        where: { id: requestId },
+        data: {
+          status: AccessRequestStatus.REJECTED,
+          reviewerId: userId,
+          reviewedAt: new Date(),
+        },
+      });
+      return this.toAccessRequestDto(rejected);
+    }
+
+    const approvedRole = dto.role ?? request.requestedRole;
+    if (approvedRole === 'OWNER') {
+      throw new ForbiddenException('cannot grant OWNER role');
+    }
+    const approvedScope = dto.scope ?? request.scope;
+    const target = await this.resolveAccessRequestTarget(
+      kbId,
+      approvedScope,
+      dto.nodeId ?? request.nodeId ?? undefined
+    );
+    const approvedIncludeChildren =
+      dto.includeChildren ?? this.defaultIncludeChildren(approvedScope, target.node?.type);
+    const grantNodeId =
+      approvedScope === AccessRequestScope.KNOWLEDGE_BASE ? kb.rootNodeId : target.nodeId;
+    if (!grantNodeId) throw new NotFoundException();
+
+    const approved = await this.prisma.$transaction(async (tx) => {
+      await tx.nodeMember.upsert({
+        where: { nodeId_userId: { nodeId: grantNodeId, userId: request.requesterId } },
+        update: { role: approvedRole, includeChildren: approvedIncludeChildren },
+        create: {
+          nodeId: grantNodeId,
+          userId: request.requesterId,
+          role: approvedRole,
+          includeChildren: approvedIncludeChildren,
+        },
+      });
+      return tx.accessRequest.update({
+        where: { id: requestId },
+        data: {
+          status: AccessRequestStatus.APPROVED,
+          reviewerId: userId,
+          approvedRole,
+          approvedScope,
+          approvedNodeId: grantNodeId,
+          approvedIncludeChildren,
+          reviewedAt: new Date(),
+        },
+      });
+    });
+    return this.toAccessRequestDto(approved);
+  }
+
   // ---------- members (via root node) ----------
 
   async listMembers(userId: string, kbId: string) {
@@ -255,8 +427,8 @@ export class KnowledgeBasesService {
 
     await this.prisma.nodeMember.upsert({
       where: { nodeId_userId: { nodeId: kb.rootNodeId!, userId: invitee.id } },
-      update: { role },
-      create: { nodeId: kb.rootNodeId!, userId: invitee.id, role },
+      update: { role, includeChildren: true },
+      create: { nodeId: kb.rootNodeId!, userId: invitee.id, role, includeChildren: true },
     });
     return { userId: invitee.id, email: invitee.email, name: invitee.name, role };
   }
@@ -363,6 +535,81 @@ export class KnowledgeBasesService {
   }
 
   // ---------- private ----------
+
+  private async getRequestTargetRole(
+    userId: string,
+    kbId: string,
+    scope: AccessRequestScope,
+    nodeId?: string
+  ) {
+    if (scope === AccessRequestScope.KNOWLEDGE_BASE) {
+      return this.getEffectiveRole(userId, kbId);
+    }
+    if (!nodeId) {
+      return null;
+    }
+    return this.getNodeEffectiveRole(userId, nodeId);
+  }
+
+  private async resolveAccessRequestTarget(
+    kbId: string,
+    scope: AccessRequestScope,
+    nodeId?: string
+  ): Promise<{
+    nodeId: string | null;
+    node: { id: string; title: string; type: NodeType } | null;
+  }> {
+    if (scope === AccessRequestScope.KNOWLEDGE_BASE) {
+      return { nodeId: null, node: null };
+    }
+    if (!nodeId) {
+      throw new ForbiddenException('nodeId is required for node access requests');
+    }
+    const node = await this.prisma.node.findUnique({
+      where: { id: nodeId },
+      select: { id: true, kbId: true, title: true, type: true },
+    });
+    if (!node || node.kbId !== kbId) throw new NotFoundException();
+    return { nodeId: node.id, node: { id: node.id, title: node.title, type: node.type } };
+  }
+
+  private defaultIncludeChildren(scope: AccessRequestScope, nodeType?: NodeType) {
+    if (scope === AccessRequestScope.KNOWLEDGE_BASE) {
+      return true;
+    }
+    return nodeType === 'FOLDER';
+  }
+
+  private toAccessRequestDto(
+    request: Prisma.AccessRequestGetPayload<{
+      include?: {
+        requester?: { select: { id: true; email: true; name: true } };
+        node?: { select: { id: true; title: true; type: true } };
+      };
+    }>
+  ) {
+    return {
+      id: request.id,
+      kbId: request.kbId,
+      nodeId: request.nodeId,
+      scope: request.scope,
+      requesterId: request.requesterId,
+      requester: 'requester' in request ? request.requester : undefined,
+      node: 'node' in request ? request.node : undefined,
+      requestedRole: request.requestedRole,
+      requestedIncludeChildren: request.requestedIncludeChildren,
+      message: request.message,
+      status: request.status,
+      reviewerId: request.reviewerId,
+      approvedRole: request.approvedRole,
+      approvedScope: request.approvedScope,
+      approvedNodeId: request.approvedNodeId,
+      approvedIncludeChildren: request.approvedIncludeChildren,
+      reviewedAt: request.reviewedAt?.toISOString() ?? null,
+      createdAt: request.createdAt.toISOString(),
+      updatedAt: request.updatedAt.toISOString(),
+    };
+  }
 
   private buildTree(nodes: TreeNode[]): TreeNode[] {
     const map = new Map<string, TreeNode>();

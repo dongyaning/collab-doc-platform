@@ -5,6 +5,45 @@ import type { KnowledgeBaseSummary, KnowledgeBaseTree, NodeDetail } from '@wisef
 // ---- shared types ----
 
 export type NodeRole = 'OWNER' | 'EDITOR' | 'COMMENTER' | 'VIEWER';
+export type AccessRequestScope = 'KNOWLEDGE_BASE' | 'NODE';
+export type AccessRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELED';
+
+export interface AccessRequest {
+  id: string;
+  kbId: string;
+  nodeId: string | null;
+  scope: AccessRequestScope;
+  requesterId: string;
+  requester?: { id: string; email: string; name: string };
+  node?: { id: string; title: string; type: string } | null;
+  requestedRole: Exclude<NodeRole, 'OWNER'>;
+  requestedIncludeChildren: boolean;
+  message: string | null;
+  status: AccessRequestStatus;
+  approvedRole: Exclude<NodeRole, 'OWNER'> | null;
+  approvedScope: AccessRequestScope | null;
+  approvedNodeId: string | null;
+  approvedIncludeChildren: boolean | null;
+  reviewedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateAccessRequestInput {
+  scope: AccessRequestScope;
+  nodeId?: string;
+  requestedRole?: Exclude<NodeRole, 'OWNER'>;
+  includeChildren?: boolean;
+  message?: string;
+}
+
+export interface ReviewAccessRequestInput {
+  status: 'APPROVED' | 'REJECTED';
+  role?: Exclude<NodeRole, 'OWNER'>;
+  scope?: AccessRequestScope;
+  nodeId?: string;
+  includeChildren?: boolean;
+}
 
 export interface NodeMember {
   userId: string;
@@ -54,6 +93,16 @@ export const knowledgeBasesApi = {
   getTree: (id: string) =>
     api.get<KnowledgeBaseTree>(`/knowledge-bases/${id}/tree`).then((r) => r.data),
   remove: (id: string) => api.delete<{ ok: true }>(`/knowledge-bases/${id}`).then((r) => r.data),
+  createAccessRequest: (id: string, data: CreateAccessRequestInput) =>
+    api.post<AccessRequest>(`/knowledge-bases/${id}/access-requests`, data).then((r) => r.data),
+  getMyAccessRequest: (id: string) =>
+    api.get<AccessRequest | null>(`/knowledge-bases/${id}/access-requests/my`).then((r) => r.data),
+  listAccessRequests: (id: string) =>
+    api.get<AccessRequest[]>(`/knowledge-bases/${id}/access-requests`).then((r) => r.data),
+  reviewAccessRequest: (id: string, requestId: string, data: ReviewAccessRequestInput) =>
+    api
+      .patch<AccessRequest>(`/knowledge-bases/${id}/access-requests/${requestId}`, data)
+      .then((r) => r.data),
   listMembers: (id: string) =>
     api.get<NodeMembersResponse>(`/knowledge-bases/${id}/members`).then((r) => r.data),
   addMember: (id: string, email: string, role: Exclude<NodeRole, 'OWNER'>) =>
