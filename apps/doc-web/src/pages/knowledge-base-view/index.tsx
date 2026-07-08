@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { EditorContent, useEditor, type JSONContent } from '@tiptap/react';
 import dayjs from 'dayjs';
@@ -129,9 +129,48 @@ function colorFor(seed: string): string {
   return USER_COLORS[Math.abs(h) % USER_COLORS.length] ?? USER_COLORS[0]!;
 }
 
+function normalizeDocContent(content: JSONContent): JSONContent {
+  return normalizeDocNode(content) ?? { type: 'doc', content: [] };
+}
+
+function normalizeDocNode(node: JSONContent, parentType?: string): JSONContent | null {
+  if (node.type === 'text' && node.text === '') {
+    return null;
+  }
+
+  const children = node.content?.flatMap((child) => {
+    const normalized = normalizeDocNode(child, node.type);
+    return normalized ? [normalized] : [];
+  });
+
+  const next: JSONContent = { ...node };
+  if (children) {
+    if (children.length > 0) {
+      next.content = children;
+    } else {
+      delete next.content;
+    }
+  }
+
+  if (next.type === 'image' && parentType === 'doc') {
+    const attrs = { ...(next.attrs ?? {}) };
+    delete attrs.textAlign;
+    delete attrs.layoutMode;
+    delete attrs.floatSide;
+    return {
+      type: 'paragraph',
+      attrs: { textAlign: node.attrs?.textAlign ?? 'center' },
+      content: [{ ...next, attrs }],
+    };
+  }
+
+  return next;
+}
+
 export function KnowledgeBaseViewPage() {
   const { kbId, nodeId } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { modal } = AntdApp.useApp();
   const token = useAuthStore((s) => s.token);
@@ -156,7 +195,30 @@ export function KnowledgeBaseViewPage() {
     (activeDoc.data?.role as NodeRole | undefined) ??
     (treeQuery.data?.kb?.role as NodeRole | undefined);
   const canUserEdit = canEdit(userRole);
+  const requestedMode = searchParams.get('mode');
   const editable = canUserEdit && isEditing;
+
+  const setModeParam = useCallback(
+    (mode: 'read' | 'edit') => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set('mode', mode);
+          return next;
+        },
+        { replace: true }
+      );
+    },
+    [setSearchParams]
+  );
+
+  const enterEditMode = useCallback(() => {
+    if (!canUserEdit) {
+      return;
+    }
+    setIsEditing(true);
+    setModeParam('edit');
+  }, [canUserEdit, setModeParam]);
 
   // ---- tree helpers ----
   function buildTreeData(nodes: TreeNode[]): TreeProps['treeData'] {
@@ -171,7 +233,8 @@ export function KnowledgeBaseViewPage() {
 
   const onSelect: TreeProps['onSelect'] = (keys) => {
     if (keys.length > 0 && keys[0] !== nodeId) {
-      navigate(`/kb/${kbId}/${keys[0]}`);
+      const query = searchParams.toString();
+      navigate(`/kb/${kbId}/${keys[0]}${query ? `?${query}` : ''}`);
     }
   };
 
@@ -285,15 +348,19 @@ export function KnowledgeBaseViewPage() {
   // Fetch document content for reading mode via REST
   const contentQuery = useQuery({
     queryKey: ['node-content', nodeId],
-    queryFn: () => nodesApi.getContent(nodeId!),
+    queryFn: async () => normalizeDocContent(await nodesApi.getContent(nodeId!)),
     enabled: !!nodeId && !isEditing,
-    staleTime: Infinity,
   });
 
-  // reset to reading mode when navigating to a different doc
   useEffect(() => {
-    setIsEditing(false);
-  }, [nodeId]);
+    setIsEditing(canUserEdit && requestedMode === 'edit');
+  }, [canUserEdit, nodeId, requestedMode]);
+
+  useEffect(() => {
+    if (requestedMode === 'edit' && userRole && !canUserEdit) {
+      setModeParam('read');
+    }
+  }, [canUserEdit, requestedMode, setModeParam, userRole]);
 
   useEffect(() => {
     if (!nodeId || !token || !user || !isEditing) {
@@ -352,7 +419,7 @@ export function KnowledgeBaseViewPage() {
     {
       editable,
       autofocus: true,
-      content: isEditing ? undefined : (contentQuery.data ?? undefined),
+      content: contentQuery.data ?? undefined,
       extensions: [
         StarterKit.configure({ history: false }),
         CodeBlockLowlight.configure({ lowlight }),
@@ -367,7 +434,7 @@ export function KnowledgeBaseViewPage() {
           },
         }),
         TextAlign.configure({
-          types: ['heading', 'paragraph', 'image'],
+          types: ['heading', 'paragraph'],
           alignments: ['left', 'center', 'right'],
           defaultAlignment: 'left',
         }),
@@ -396,21 +463,43 @@ export function KnowledgeBaseViewPage() {
           : []),
       ],
     },
-    [ydoc, provider, editable, contentQuery.data, isEditing]
+    [ydoc, provider, editable, contentQuery.data]
   );
+
+  useEffect(() => {
+    if (!editor || !contentQuery.data || provider || isEditing) {
+      return;
+    }
+    editor.commands.setContent(contentQuery.data);
+  }, [editor, contentQuery.data, provider, isEditing]);
+
+  const exitEditMode = useCallback(() => {
+    if (nodeId && editor) {
+      queryClient.setQueryData(['node-content', nodeId], normalizeDocContent(editor.getJSON()));
+      void queryClient.invalidateQueries({ queryKey: ['node-content', nodeId] });
+    }
+    setIsEditing(false);
+    setModeParam('read');
+  }, [editor, nodeId, queryClient, setModeParam]);
 
   // Cmd+E toggles edit mode for users with edit permission
   useEffect(() => {
-    if (!canUserEdit) return;
+    if (!canUserEdit) {
+      return undefined;
+    }
     function onKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === 'e') {
         e.preventDefault();
-        setIsEditing((v) => !v);
+        if (isEditing) {
+          exitEditMode();
+        } else {
+          enterEditMode();
+        }
       }
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [canUserEdit]);
+  }, [canUserEdit, enterEditMode, isEditing, exitEditMode]);
 
   // ---- title autosave ----
   const [title, setTitle] = useState('');
@@ -677,9 +766,9 @@ export function KnowledgeBaseViewPage() {
               <Space wrap>
                 {canUserEdit ? (
                   isEditing ? (
-                    <Button onClick={() => setIsEditing(false)}>Exit edit</Button>
+                    <Button onClick={exitEditMode}>Exit edit</Button>
                   ) : (
-                    <Button type="primary" onClick={() => setIsEditing(true)}>
+                    <Button type="primary" onClick={enterEditMode}>
                       Edit
                     </Button>
                   )
@@ -1199,7 +1288,9 @@ function VersionPreviewModal({
   const previewEditor = useEditor(
     {
       editable: false,
-      content: (version?.content ?? { type: 'doc', content: [] }) as JSONContent,
+      content: normalizeDocContent(
+        (version?.content ?? { type: 'doc', content: [] }) as JSONContent
+      ),
       extensions: [
         StarterKit,
         CodeBlockLowlight.configure({ lowlight }),
@@ -1214,7 +1305,7 @@ function VersionPreviewModal({
           },
         }),
         TextAlign.configure({
-          types: ['heading', 'paragraph', 'image'],
+          types: ['heading', 'paragraph'],
           alignments: ['left', 'center', 'right'],
           defaultAlignment: 'left',
         }),

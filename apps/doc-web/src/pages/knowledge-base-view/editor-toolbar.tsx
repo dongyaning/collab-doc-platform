@@ -144,6 +144,13 @@ export function EditorToolbar({ editor, editable }: EditorToolbarProps) {
     });
   }, [editor, modal]);
 
+  const insertImage = useCallback(
+    (src: string) => {
+      editor!.chain().focus().setImage({ src }).run();
+    },
+    [editor]
+  );
+
   const handleImageUpload = useCallback(() => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -155,34 +162,39 @@ export function EditorToolbar({ editor, editable }: EditorToolbarProps) {
       const { filesApi } = await import('../../lib/endpoints');
       try {
         const { url } = await filesApi.upload(file);
-        editor!.chain().focus().setImage({ src: url }).run();
+        insertImage(url);
       } catch {
         modal.error({ title: '上传失败', content: '图片上传失败，请重试' });
       }
     };
     input.click();
-  }, [editor, modal]);
+  }, [insertImage, modal]);
 
   const handlePaste = useCallback(
     async (e: ClipboardEvent) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      for (const item of Array.from(items)) {
-        if (item.type.startsWith('image/')) {
-          e.preventDefault();
-          const file = item.getAsFile();
-          if (!file) continue;
-          const { filesApi } = await import('../../lib/endpoints');
-          try {
-            const { url } = await filesApi.upload(file);
-            editor!.chain().focus().setImage({ src: url }).run();
-          } catch {
-            // silent failure for paste
-          }
-        }
+      const clipboardData = e.clipboardData;
+      const html = clipboardData?.getData('text/html') ?? '';
+      if (/<img\s/i.test(html)) {
+        return;
+      }
+
+      const items = Array.from(clipboardData?.items ?? []);
+      const imageItem = items.find((item) => item.type.startsWith('image/'));
+      if (!imageItem) return;
+
+      e.preventDefault();
+      const file = imageItem.getAsFile();
+      if (!file) return;
+
+      const { filesApi } = await import('../../lib/endpoints');
+      try {
+        const { url } = await filesApi.upload(file);
+        insertImage(url);
+      } catch {
+        // silent failure for paste
       }
     },
-    [editor]
+    [insertImage]
   );
 
   // Attach paste handler for image paste
@@ -194,6 +206,16 @@ export function EditorToolbar({ editor, editable }: EditorToolbarProps) {
   }, [handlePaste, editor?.view.dom]);
 
   if (!editable || !editor) return null;
+
+  const activeEditor = editor;
+
+  function isAlignActive(alignment: 'left' | 'center' | 'right') {
+    return activeEditor.isActive({ textAlign: alignment });
+  }
+
+  function applyAlignment(alignment: 'left' | 'center' | 'right') {
+    activeEditor.chain().focus().setTextAlign(alignment).run();
+  }
 
   const headingValue =
     (editor.isActive('heading', { level: 1 }) && 'h1') ||
@@ -327,21 +349,21 @@ export function EditorToolbar({ editor, editable }: EditorToolbarProps) {
       <div className={styles.group}>
         <ToolbarBtn
           icon={<AlignLeftOutlined />}
-          active={editor.isActive({ textAlign: 'left' })}
+          active={isAlignActive('left')}
           tooltip="左对齐"
-          onClick={() => editor.chain().focus().setTextAlign('left').run()}
+          onClick={() => applyAlignment('left')}
         />
         <ToolbarBtn
           icon={<AlignCenterOutlined />}
-          active={editor.isActive({ textAlign: 'center' })}
+          active={isAlignActive('center')}
           tooltip="居中对齐"
-          onClick={() => editor.chain().focus().setTextAlign('center').run()}
+          onClick={() => applyAlignment('center')}
         />
         <ToolbarBtn
           icon={<AlignRightOutlined />}
-          active={editor.isActive({ textAlign: 'right' })}
+          active={isAlignActive('right')}
           tooltip="右对齐"
-          onClick={() => editor.chain().focus().setTextAlign('right').run()}
+          onClick={() => applyAlignment('right')}
         />
       </div>
 

@@ -9,7 +9,8 @@ export const ResizableImage = Image.extend<ResizableImageOptions>({
   addOptions() {
     return {
       ...this.parent?.(),
-      defaultWidth: '35%',
+      defaultWidth: '320px',
+      inline: true,
     };
   },
 
@@ -22,9 +23,9 @@ export const ResizableImage = Image.extend<ResizableImageOptions>({
           if (!attrs.width) {
             return {};
           }
-          return { width: attrs.width };
+          return { style: `width: ${attrs.width}` };
         },
-        parseHTML: (el) => el.getAttribute('width') ?? this.options.defaultWidth,
+        parseHTML: (el) => el.style.width || el.getAttribute('width') || this.options.defaultWidth,
       },
     };
   },
