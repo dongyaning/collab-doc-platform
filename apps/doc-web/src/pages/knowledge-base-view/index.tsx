@@ -137,6 +137,8 @@ export function KnowledgeBaseViewPage() {
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
 
+  const [isEditing, setIsEditing] = useState(false);
+
   const treeQuery = useQuery<KnowledgeBaseTree>({
     queryKey: ['kb-tree', kbId],
     queryFn: () => knowledgeBasesApi.getTree(kbId!),
@@ -153,7 +155,8 @@ export function KnowledgeBaseViewPage() {
   const userRole: NodeRole | undefined =
     (activeDoc.data?.role as NodeRole | undefined) ??
     (treeQuery.data?.kb?.role as NodeRole | undefined);
-  const editable = canEdit(userRole);
+  const canUserEdit = canEdit(userRole);
+  const editable = canUserEdit && isEditing;
 
   // ---- tree helpers ----
   function buildTreeData(nodes: TreeNode[]): TreeProps['treeData'] {
@@ -274,13 +277,26 @@ export function KnowledgeBaseViewPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const ydoc = useMemo(() => new Y.Doc(), [nodeId]);
   const [provider, setProvider] = useState<WebsocketProvider | null>(null);
-  const [connState, setConnState] = useState<ConnState>('connecting');
+  const [connState, setConnState] = useState<ConnState>('disconnected');
   const [peers, setPeers] = useState<
     Array<{ id: number; name: string; color: string; email?: string }>
   >([]);
 
+  // Fetch document content for reading mode via REST
+  const contentQuery = useQuery({
+    queryKey: ['node-content', nodeId],
+    queryFn: () => nodesApi.getContent(nodeId!),
+    enabled: !!nodeId && !isEditing,
+    staleTime: Infinity,
+  });
+
+  // reset to reading mode when navigating to a different doc
   useEffect(() => {
-    if (!nodeId || !token || !user) {
+    setIsEditing(false);
+  }, [nodeId]);
+
+  useEffect(() => {
+    if (!nodeId || !token || !user || !isEditing) {
       return undefined;
     }
     const url = new URL(COLLAB_WS_URL);
@@ -330,12 +346,13 @@ export function KnowledgeBaseViewPage() {
       p.destroy();
       setProvider(null);
     };
-  }, [nodeId, token, user, ydoc]);
+  }, [nodeId, token, user, ydoc, isEditing]);
 
   const editor = useEditor(
     {
       editable,
       autofocus: true,
+      content: isEditing ? undefined : (contentQuery.data ?? undefined),
       extensions: [
         StarterKit.configure({ history: false }),
         CodeBlockLowlight.configure({ lowlight }),
@@ -363,7 +380,7 @@ export function KnowledgeBaseViewPage() {
           HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' },
         }),
         Placeholder.configure({ placeholder: 'Start writing…' }),
-        Collaboration.configure({ document: ydoc }),
+        ...(provider ? [Collaboration.configure({ document: ydoc })] : []),
         ...(provider
           ? [
               CollaborationCursor.configure({
@@ -379,8 +396,21 @@ export function KnowledgeBaseViewPage() {
           : []),
       ],
     },
-    [ydoc, provider, editable]
+    [ydoc, provider, editable, contentQuery.data, isEditing]
   );
+
+  // Cmd+E toggles edit mode for users with edit permission
+  useEffect(() => {
+    if (!canUserEdit) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'e') {
+        e.preventDefault();
+        setIsEditing((v) => !v);
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [canUserEdit]);
 
   // ---- title autosave ----
   const [title, setTitle] = useState('');
@@ -637,11 +667,24 @@ export function KnowledgeBaseViewPage() {
                 <Tag color={ROLE_COLOR[userRole ?? 'VIEWER']}>
                   {ROLE_LABEL[userRole ?? 'VIEWER']}
                 </Tag>
-                <PeerList peers={peers} selfId={provider?.awareness.clientID} />
-                <ConnBadge state={connState} />
+                {isEditing ? (
+                  <>
+                    <PeerList peers={peers} selfId={provider?.awareness.clientID} />
+                    <ConnBadge state={connState} />
+                  </>
+                ) : null}
               </Space>
               <Space wrap>
-                {editable ? (
+                {canUserEdit ? (
+                  isEditing ? (
+                    <Button onClick={() => setIsEditing(false)}>Exit edit</Button>
+                  ) : (
+                    <Button type="primary" onClick={() => setIsEditing(true)}>
+                      Edit
+                    </Button>
+                  )
+                ) : null}
+                {isEditing ? (
                   <Button
                     icon={<SaveOutlined />}
                     onClick={onSaveSnapshot}
@@ -661,7 +704,7 @@ export function KnowledgeBaseViewPage() {
               </Space>
             </div>
 
-            <EditorToolbar editor={editor} editable={editable} />
+            {isEditing ? <EditorToolbar editor={editor} editable={editable} /> : null}
 
             <div className={styles.paper}>
               <span className={styles.updateTime}>recently update: {updateTime}</span>

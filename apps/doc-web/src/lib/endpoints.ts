@@ -1,4 +1,5 @@
 import { api } from './api';
+import type { JSONContent } from '@tiptap/react';
 import type { KnowledgeBaseSummary, KnowledgeBaseTree, NodeDetail } from '@wiseflow/shared';
 
 // ---- shared types ----
@@ -76,9 +77,10 @@ export const knowledgeBasesApi = {
 
 export const nodesApi = {
   get: (id: string) => api.get<NodeDetail>(`/nodes/${id}`).then((r) => r.data),
+  getContent: (id: string) => api.get<JSONContent>(`/nodes/${id}/content`).then((r) => r.data),
   create: (data: { kbId: string; title?: string; type?: string; parentId?: string | null }) =>
     api.post<NodeDetail>('/nodes', data).then((r) => r.data),
-  update: (id: string, patch: { title?: string; content?: unknown }) =>
+  update: (id: string, patch: { title?: string }) =>
     api.patch<NodeDetail>(`/nodes/${id}`, patch).then((r) => r.data),
   move: (id: string, data: { parentId: string | null; index: number }) =>
     api.patch<{ ok: true }>(`/nodes/${id}/move`, data).then((r) => r.data),
