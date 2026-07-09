@@ -49,12 +49,17 @@ function readTaskItems(props: Record<string, unknown>): TaskItem[] {
     }));
 }
 
-function readProgress(props: Record<string, unknown>): number {
-  const progress = typeof props.progress === 'number' ? props.progress : Number(props.progress);
+function normalizePercent(value: unknown, fallback: number): number {
+  const raw = typeof value === 'string' ? value.replace('%', '') : value;
+  const progress = typeof raw === 'number' ? raw : Number(raw);
   if (!Number.isFinite(progress)) {
-    return 65;
+    return fallback;
   }
   return Math.min(100, Math.max(0, Math.round(progress)));
+}
+
+function readProgress(props: Record<string, unknown>): number {
+  return normalizePercent(props.progress, 65);
 }
 
 export const PRESET_WIDGETS: WidgetDefinition[] = [
@@ -142,15 +147,21 @@ export const PRESET_WIDGETS: WidgetDefinition[] = [
   },
   {
     type: 'metric',
-    label: '指标卡',
+    label: '目标进度',
     icon: <LineChartOutlined />,
     component: MetricWidget,
     version: 1,
-    defaultProps: { label: 'Metric', value: '42%', caption: 'Editable card widget' },
+    defaultProps: {
+      label: 'Launch readiness',
+      target: 'Target: portfolio demo ready',
+      value: 72,
+      caption: 'Core flows completed, polish in progress.',
+    },
     normalizeProps: (props) => ({
-      label: readString(props, 'label', 'Metric'),
-      value: readString(props, 'value', '42%'),
-      caption: readString(props, 'caption', 'Editable card widget'),
+      label: readString(props, 'label', 'Launch readiness'),
+      target: readString(props, 'target', 'Target: portfolio demo ready'),
+      value: normalizePercent(props.value, 72),
+      caption: readString(props, 'caption', 'Core flows completed, polish in progress.'),
     }),
   },
 ];
