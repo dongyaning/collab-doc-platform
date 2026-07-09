@@ -6,6 +6,7 @@ import { CollabModule } from './collab/collab.module.js';
 import { KnowledgeBasesModule } from './knowledge-bases/knowledge-bases.module.js';
 import { NodesModule } from './nodes/nodes.module.js';
 import { FilesModule } from './files/files.module.js';
+import { MonitorModule } from './monitor/monitor.module.js';
 import { HealthController } from './health.controller.js';
 
 @Module({
@@ -17,6 +18,7 @@ import { HealthController } from './health.controller.js';
     KnowledgeBasesModule,
     NodesModule,
     FilesModule,
+    MonitorModule,
   ],
   controllers: [HealthController],
 })

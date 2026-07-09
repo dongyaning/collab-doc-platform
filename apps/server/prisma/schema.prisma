@@ -189,3 +189,39 @@ model FileStorage {
   @@index([nodeId])
   @@index([uploadedById])
 }
+
+model MonitorEvent {
+  id           String   @id @default(cuid())
+  eventId      String   @unique
+  app          String
+  eventType    String
+  name         String
+  status       String?
+  value        Float?
+  duration     Int?
+  userId       String?
+  anonymousId  String?
+  sessionId    String?
+  pageViewId   String?
+  traceId      String?
+  route        String?
+  docId        String?
+  url          String?
+  method       String?
+  statusCode   Int?
+  errorMessage String?
+  metadata     Json?
+  userAgent    String?
+  browser      String?
+  os           String?
+  occurredAt   DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([app, createdAt])
+  @@index([eventType, createdAt])
+  @@index([docId, createdAt])
+  @@index([traceId])
+  @@index([sessionId])
+  @@index([status, createdAt])
+  @@index([duration])
+}
