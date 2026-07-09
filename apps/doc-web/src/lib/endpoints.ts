@@ -11,6 +11,7 @@ import type {
   MonitorTrendPoint,
   NodeDetail,
 } from '@wiseflow/shared';
+import type { AuthUser } from '../stores/auth.store';
 
 // ---- shared types ----
 
@@ -24,7 +25,7 @@ export interface AccessRequest {
   nodeId: string | null;
   scope: AccessRequestScope;
   requesterId: string;
-  requester?: { id: string; email: string; name: string };
+  requester?: { id: string; email: string; name: string; avatarUrl: string };
   node?: { id: string; title: string; type: string } | null;
   requestedRole: Exclude<NodeRole, 'OWNER'>;
   requestedIncludeChildren: boolean;
@@ -59,13 +60,14 @@ export interface NodeMember {
   userId: string;
   email: string;
   name: string;
+  avatarUrl: string;
   role: Exclude<NodeRole, 'OWNER'>;
   includeChildren?: boolean;
   createdAt: string;
 }
 
 export interface NodeMembersResponse {
-  owner: { id: string; email: string; name: string };
+  owner: { id: string; email: string; name: string; avatarUrl: string };
   members: NodeMember[];
 }
 
@@ -189,6 +191,18 @@ export const filesApi = {
       .post<{ id: string; url: string; originalName: string; size: number }>('/files/upload', fd)
       .then((r) => r.data);
   },
+  uploadAvatar: (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return api
+      .post<{
+        id: string;
+        url: string;
+        originalName: string;
+        size: number;
+      }>('/files/avatar-upload', fd)
+      .then((r) => r.data);
+  },
 };
 
 export const authApi = {
@@ -196,15 +210,15 @@ export const authApi = {
     api
       .post<{
         accessToken: string;
-        user: { id: string; email: string; name: string };
+        user: AuthUser;
       }>('/auth/login', { email, password })
       .then((r) => r.data),
-  register: (email: string, password: string, name: string) =>
+  register: (email: string, password: string, name: string, avatarUrl: string) =>
     api
       .post<{
         accessToken: string;
-        user: { id: string; email: string; name: string };
-      }>('/auth/register', { email, password, name })
+        user: AuthUser;
+      }>('/auth/register', { email, password, name, avatarUrl })
       .then((r) => r.data),
 };
 

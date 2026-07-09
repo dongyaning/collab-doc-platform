@@ -28,6 +28,61 @@
   margin: 0;
 }
 
+.avatarPicker {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.avatarPreview {
+  flex: 0 0 auto;
+  background: #eef2ff;
+}
+
+.avatarOptions {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.defaultAvatars {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.avatarOption {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.avatarOption[data-selected='true'] {
+  border-color: #1677ff;
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.14);
+}
+
+.avatarFileInput {
+  display: none;
+}
+
+.avatarHint {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .submitItem {
   margin-bottom: 0;
 }
