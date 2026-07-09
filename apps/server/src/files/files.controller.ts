@@ -13,11 +13,21 @@ interface MulterFile {
   buffer: Buffer;
 }
 
-@UseGuards(JwtAuthGuard)
 @Controller('files')
 export class FilesController {
   constructor(@Inject(FilesService) private readonly files: FilesService) {}
 
+  @Post('avatar-upload')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  async uploadAvatar(@UploadedFile() file: MulterFile) {
+    if (!file) {
+      return { error: 'No file provided' };
+    }
+    const record = await this.files.uploadAvatar(file);
+    return { id: record.id, url: record.url, originalName: record.originalName, size: record.size };
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post('upload')
   @UseInterceptors(FileInterceptor('file'))
   async upload(@CurrentUser() user: AuthUser, @UploadedFile() file: MulterFile) {

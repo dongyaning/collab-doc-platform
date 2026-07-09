@@ -33,6 +33,7 @@ model User {
   email        String   @unique
   name         String
   passwordHash String
+  avatarUrl    String   @default("https://api.dicebear.com/9.x/personas/svg?seed=Dong")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

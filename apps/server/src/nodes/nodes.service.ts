@@ -267,14 +267,17 @@ export class NodesService {
         role: true,
         includeChildren: true,
         createdAt: true,
-        user: { select: { id: true, email: true, name: true } },
+        user: { select: { id: true, email: true, name: true, avatarUrl: true } },
       },
     });
 
     // Resolve the node's KB owner
     const kb = await this.prisma.knowledgeBase.findUnique({
       where: { id: node.kbId },
-      select: { ownerId: true, owner: { select: { id: true, email: true, name: true } } },
+      select: {
+        ownerId: true,
+        owner: { select: { id: true, email: true, name: true, avatarUrl: true } },
+      },
     });
 
     return {
@@ -283,6 +286,7 @@ export class NodesService {
         userId: m.user.id,
         email: m.user.email,
         name: m.user.name,
+        avatarUrl: m.user.avatarUrl,
         role: m.role,
         includeChildren: m.includeChildren,
         createdAt: m.createdAt,
@@ -308,7 +312,7 @@ export class NodesService {
 
     const invitee = await this.prisma.user.findUnique({
       where: { email },
-      select: { id: true, email: true, name: true },
+      select: { id: true, email: true, name: true, avatarUrl: true },
     });
     if (!invitee) throw new NotFoundException(`no user with email ${email}`);
 
@@ -317,7 +321,13 @@ export class NodesService {
       update: { role, includeChildren },
       create: { nodeId, userId: invitee.id, role, includeChildren },
     });
-    return { userId: invitee.id, email: invitee.email, name: invitee.name, role };
+    return {
+      userId: invitee.id,
+      email: invitee.email,
+      name: invitee.name,
+      avatarUrl: invitee.avatarUrl,
+      role,
+    };
   }
 
   async updateNodeMember(

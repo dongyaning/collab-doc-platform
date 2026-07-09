@@ -1,5 +1,5 @@
 import { Readable } from 'node:stream';
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.module.js';
 import { FileStorageService } from './file-storage.service.js';
 
@@ -10,6 +10,8 @@ interface UploadFile {
   buffer: Buffer;
 }
 
+const IMAGE_MIME_PREFIX = 'image/';
+
 @Injectable()
 export class FilesService {
   constructor(
@@ -17,7 +19,7 @@ export class FilesService {
     @Inject(FileStorageService) private readonly storage: FileStorageService
   ) {}
 
-  async upload(file: UploadFile, uploadedById: string) {
+  async upload(file: UploadFile, uploadedById?: string) {
     const stream = Readable.from(file.buffer);
     const result = await this.storage.save(file.originalname, file.mimetype, stream);
 
@@ -34,6 +36,13 @@ export class FilesService {
     });
 
     return record;
+  }
+
+  async uploadAvatar(file: UploadFile) {
+    if (!file.mimetype.startsWith(IMAGE_MIME_PREFIX)) {
+      throw new BadRequestException('avatar must be an image');
+    }
+    return this.upload(file);
   }
 
   async delete(id: string) {

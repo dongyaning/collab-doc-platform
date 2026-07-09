@@ -16,7 +16,10 @@ const ROLE_RANK: Record<NodeRole, number> = {
 export type EffectiveRole = NodeRole;
 
 type KbWithOwnerAndCount = Prisma.KnowledgeBaseGetPayload<{
-  include: { owner: { select: { id: true; name: true } }; _count: { select: { nodes: true } } };
+  include: {
+    owner: { select: { id: true; name: true; avatarUrl: true } };
+    _count: { select: { nodes: true } };
+  };
 }>;
 
 @Injectable()
@@ -31,7 +34,7 @@ export class KnowledgeBasesService {
       },
       orderBy: { updatedAt: 'desc' },
       include: {
-        owner: { select: { id: true, name: true } },
+        owner: { select: { id: true, name: true, avatarUrl: true } },
         _count: { select: { nodes: true } },
       },
     });
@@ -54,7 +57,7 @@ export class KnowledgeBasesService {
         title: title ?? 'Untitled Space',
         description,
       },
-      include: { owner: { select: { id: true, name: true } } },
+      include: { owner: { select: { id: true, name: true, avatarUrl: true } } },
     });
     // Create a root node for the KB
     const rootNode = await this.prisma.node.create({
@@ -83,7 +86,7 @@ export class KnowledgeBasesService {
   async getTree(userId: string, kbId: string) {
     const kb = await this.prisma.knowledgeBase.findUnique({
       where: { id: kbId },
-      include: { owner: { select: { id: true, name: true } } },
+      include: { owner: { select: { id: true, name: true, avatarUrl: true } } },
     });
     if (!kb) throw new NotFoundException();
 
@@ -279,7 +282,7 @@ export class KnowledgeBasesService {
       where: { kbId },
       orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
       include: {
-        requester: { select: { id: true, email: true, name: true } },
+        requester: { select: { id: true, email: true, name: true, avatarUrl: true } },
         node: { select: { id: true, title: true, type: true } },
       },
     });
@@ -384,13 +387,13 @@ export class KnowledgeBasesService {
       select: {
         role: true,
         createdAt: true,
-        user: { select: { id: true, email: true, name: true } },
+        user: { select: { id: true, email: true, name: true, avatarUrl: true } },
       },
     });
 
     const owner = await this.prisma.user.findUnique({
       where: { id: kb.ownerId },
-      select: { id: true, email: true, name: true },
+      select: { id: true, email: true, name: true, avatarUrl: true },
     });
 
     return {
@@ -399,6 +402,7 @@ export class KnowledgeBasesService {
         userId: m.user.id,
         email: m.user.email,
         name: m.user.name,
+        avatarUrl: m.user.avatarUrl,
         role: m.role,
         createdAt: m.createdAt,
       })),
@@ -418,7 +422,7 @@ export class KnowledgeBasesService {
 
     const invitee = await this.prisma.user.findUnique({
       where: { email },
-      select: { id: true, email: true, name: true },
+      select: { id: true, email: true, name: true, avatarUrl: true },
     });
     if (!invitee) throw new NotFoundException(`no user with email ${email}`);
     if (kb.ownerId === invitee.id) {
@@ -430,7 +434,13 @@ export class KnowledgeBasesService {
       update: { role, includeChildren: true },
       create: { nodeId: kb.rootNodeId!, userId: invitee.id, role, includeChildren: true },
     });
-    return { userId: invitee.id, email: invitee.email, name: invitee.name, role };
+    return {
+      userId: invitee.id,
+      email: invitee.email,
+      name: invitee.name,
+      avatarUrl: invitee.avatarUrl,
+      role,
+    };
   }
 
   async updateMemberRole(userId: string, kbId: string, targetUserId: string, role: NodeRole) {
@@ -583,7 +593,7 @@ export class KnowledgeBasesService {
   private toAccessRequestDto(
     request: Prisma.AccessRequestGetPayload<{
       include?: {
-        requester?: { select: { id: true; email: true; name: true } };
+        requester?: { select: { id: true; email: true; name: true; avatarUrl: true } };
         node?: { select: { id: true; title: true; type: true } };
       };
     }>
