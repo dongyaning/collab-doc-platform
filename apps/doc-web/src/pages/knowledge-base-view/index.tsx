@@ -953,6 +953,7 @@ function AccessRequestPanel({
   request: AccessRequest | null | undefined;
   loading: boolean;
 }) {
+  const { message: messageApi } = AntdApp.useApp();
   const qc = useQueryClient();
   const [scope, setScope] = useState<AccessRequestScope>(nodeId ? 'NODE' : 'KNOWLEDGE_BASE');
   const [message, setMessage] = useState('');
@@ -968,6 +969,7 @@ function AccessRequestPanel({
       }),
     onSuccess: async () => {
       setError(null);
+      messageApi.success('Access request submitted');
       await qc.invalidateQueries({ queryKey: ['kb-access-request-my', kbId] });
     },
     onError: (err: unknown) => {
