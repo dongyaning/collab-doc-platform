@@ -10,6 +10,8 @@
   "packageManager": "pnpm@9.12.0",
   "scripts": {
     "dev": "pnpm -r --parallel --filter \"./apps/*\" run dev",
+    "web": "pnpm --filter @wiseflow/web dev",
+    "server": "pnpm --filter @wiseflow/server dev",
     "build": "pnpm -r run build",
     "typecheck": "pnpm -r run typecheck",
     "lint": "eslint .",
