@@ -1,0 +1,136 @@
+.page {
+  height: 100%;
+  overflow: auto;
+  background: #f7f8fb;
+}
+
+.content {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.titleGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.title {
+  margin: 0;
+  font-size: 22px;
+  line-height: 30px;
+  font-weight: 650;
+}
+
+.subtitle {
+  color: #667085;
+}
+
+.filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.metricGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.metricCard {
+  border-radius: 8px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.72fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.card {
+  border-radius: 8px;
+}
+
+.trendList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.trendRow {
+  display: grid;
+  grid-template-columns: 160px 1fr 68px 68px;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+}
+
+.trendBarTrack {
+  height: 8px;
+  overflow: hidden;
+  background: #eef1f5;
+  border-radius: 999px;
+}
+
+.trendBar {
+  height: 100%;
+  background: #1677ff;
+  border-radius: 999px;
+}
+
+.muted {
+  color: #667085;
+}
+
+@media (max-width: 960px) {
+  .header {
+    flex-direction: column;
+  }
+
+  .filters {
+    justify-content: flex-start;
+  }
+
+  .metricGrid {
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .content {
+    padding: 16px;
+  }
+
+  .metricGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .trendRow {
+    grid-template-columns: 1fr;
+  }
+}

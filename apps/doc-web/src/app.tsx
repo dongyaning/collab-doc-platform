@@ -5,6 +5,7 @@ import { LoginPage } from './pages/login';
 import { RegisterPage } from './pages/register';
 import { KnowledgeBaseListPage } from './pages/knowledge-base-list';
 import { KnowledgeBaseViewPage } from './pages/knowledge-base-view';
+import { PerformancePage } from './pages/performance';
 import { AppLayout } from './pages/app-layout';
 import { themeTokens } from './styles/tokens';
 
@@ -30,6 +31,7 @@ export function App() {
               <Route path="/register" element={<RegisterPage />} />
               <Route element={<AppLayout />}>
                 <Route path="/kb" element={<KnowledgeBaseListPage />} />
+                <Route path="/performance" element={<PerformancePage />} />
                 <Route path="/kb/:kbId" element={<KnowledgeBaseViewPage />} />
                 <Route path="/kb/:kbId/:nodeId" element={<KnowledgeBaseViewPage />} />
               </Route>

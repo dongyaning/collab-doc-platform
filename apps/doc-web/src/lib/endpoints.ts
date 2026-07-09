@@ -1,6 +1,16 @@
 import { api } from './api';
 import type { JSONContent } from '@tiptap/react';
-import type { KnowledgeBaseSummary, KnowledgeBaseTree, NodeDetail } from '@wiseflow/shared';
+import type {
+  KnowledgeBaseSummary,
+  KnowledgeBaseTree,
+  MonitorErrorEvent,
+  MonitorEventRecord,
+  MonitorSlowDoc,
+  MonitorSlowRequest,
+  MonitorSummary,
+  MonitorTrendPoint,
+  NodeDetail,
+} from '@wiseflow/shared';
 
 // ---- shared types ----
 
@@ -196,4 +206,26 @@ export const authApi = {
         user: { id: string; email: string; name: string };
       }>('/auth/register', { email, password, name })
       .then((r) => r.data),
+};
+
+export interface MonitorQueryParams {
+  from?: string;
+  to?: string;
+  docId?: string;
+  eventType?: string;
+  limit?: number;
+}
+
+export const monitorApi = {
+  summary: (params?: MonitorQueryParams) =>
+    api.get<MonitorSummary>('/monitor/summary', { params }).then((r) => r.data),
+  trends: (params?: MonitorQueryParams) =>
+    api.get<MonitorTrendPoint[]>('/monitor/trends', { params }).then((r) => r.data),
+  slowRequests: (params?: MonitorQueryParams) =>
+    api.get<MonitorSlowRequest[]>('/monitor/slow-requests', { params }).then((r) => r.data),
+  slowDocs: (params?: MonitorQueryParams) =>
+    api.get<MonitorSlowDoc[]>('/monitor/slow-docs', { params }).then((r) => r.data),
+  errors: (params?: MonitorQueryParams) =>
+    api.get<MonitorErrorEvent[]>('/monitor/errors', { params }).then((r) => r.data),
+  event: (id: string) => api.get<MonitorEventRecord>(`/monitor/events/${id}`).then((r) => r.data),
 };

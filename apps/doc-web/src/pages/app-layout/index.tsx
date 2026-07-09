@@ -1,6 +1,6 @@
 import { Outlet, useNavigate } from 'react-router-dom';
-import { Button, Layout, Space, Typography } from 'antd';
-import { LogoutOutlined } from '@ant-design/icons';
+import { Button, Layout, Space, Tooltip, Typography } from 'antd';
+import { DashboardOutlined, LogoutOutlined } from '@ant-design/icons';
 import { WiseFlowLogo } from '../../components/wiseflow-logo';
 import { Navigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/auth.store';
@@ -29,6 +29,13 @@ export function AppLayout() {
           <Text className={styles.brandText}>WiseFlow</Text>
         </Space>
         <Space className={styles.topBarRight}>
+          <Tooltip title="Performance">
+            <Button
+              icon={<DashboardOutlined />}
+              type="text"
+              onClick={() => navigate('/performance')}
+            />
+          </Tooltip>
           <Text type="secondary">{user?.name}</Text>
           <Button
             icon={<LogoutOutlined />}
