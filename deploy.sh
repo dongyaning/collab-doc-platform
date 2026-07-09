@@ -48,6 +48,21 @@ update_code() {
   fi
 }
 
+wait_for_postgres() {
+  info "等待 PostgreSQL 就绪..."
+  for i in $(seq 1 30); do
+    if docker-compose exec -T postgres pg_isready -U collab -d collab_doc &>/dev/null; then
+      info "PostgreSQL 已就绪"
+      return 0
+    fi
+    sleep 2
+  done
+
+  error "PostgreSQL 未就绪，请检查 postgres 容器日志"
+  docker-compose logs --tail=80 postgres || true
+  exit 1
+}
+
 run_migrations() {
   info "执行数据库迁移..."
   # 确保 postgres 完全就绪后，在 server 容器内执行 migrate
@@ -74,6 +89,7 @@ deploy() {
 
   if [ "$update_only" = true ]; then
     info "增量更新：重建 server 和 web ..."
+    docker-compose up -d postgres
     docker-compose build server web
     docker-compose up -d --no-deps server web
   else
@@ -83,16 +99,7 @@ deploy() {
     docker-compose up -d
   fi
 
-  # 等待 postgres 就绪
-  info "等待 PostgreSQL 就绪..."
-  for i in $(seq 1 30); do
-    if docker-compose exec -T postgres pg_isready -U collab -d collab_doc &>/dev/null; then
-      info "PostgreSQL 已就绪"
-      break
-    fi
-    sleep 2
-  done
-
+  wait_for_postgres
   run_migrations
   seed_demo
 
