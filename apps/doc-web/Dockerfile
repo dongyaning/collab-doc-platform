@@ -20,6 +20,9 @@ RUN pnpm install --frozen-lockfile
 COPY packages/shared/ packages/shared/
 RUN pnpm --filter @wiseflow/shared run build
 
+# Copy workspace packages imported by doc-web
+COPY packages/monitor-sdk/ packages/monitor-sdk/
+
 # Build frontend
 COPY apps/doc-web/ apps/doc-web/
 RUN pnpm --filter @wiseflow/doc-web run build
