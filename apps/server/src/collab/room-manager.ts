@@ -309,9 +309,15 @@ export class RoomManager {
   }
 
   /**
-   * Decode persisted yjsState to Tiptap JSON for REST clients.
+   * Decode the freshest available Yjs state to Tiptap JSON for REST clients.
    */
   async getDocumentContent(docId: string): Promise<unknown> {
+    const room = this.rooms.get(docId);
+    if (room) {
+      const snapshot = Y.encodeStateAsUpdate(room.ydoc);
+      return decodeYjsStateToProseMirror(snapshot);
+    }
+
     const rec = await this.prisma.node.findUnique({
       where: { id: docId },
       select: { yjsState: true },

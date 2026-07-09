@@ -21,9 +21,12 @@ function fromYXmlFragment(fragment: Y.XmlFragment): { type: string; content: unk
 
 function fromYXmlNode(node: Y.XmlElement | Y.XmlText | Y.XmlHook): unknown[] {
   if (node instanceof Y.XmlText) {
-    return [{ type: 'text', text: node.toString() }];
+    const text = node.toString();
+    return text ? [{ type: 'text', text }] : [];
   }
-  if (!(node instanceof Y.XmlElement)) return [];
+  if (!(node instanceof Y.XmlElement)) {
+    return [];
+  }
 
   const rawAttrs = node.getAttributes();
   const attrs: Record<string, unknown> = {};
