@@ -20,6 +20,7 @@ import { ResizableImage, ImageNodeView } from '../../extensions/image';
 import { WidgetExtension, WidgetNodeView } from '../../extensions/widget';
 import { registerPresetWidgets } from '../../extensions/widget/presets';
 import { EditorToolbar } from './editor-toolbar';
+import { RemoteNodeCursors } from './remote-node-cursors';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import {
@@ -66,6 +67,14 @@ import {
   type NodeRole,
   type NodeMembersResponse,
 } from '../../lib/endpoints';
+import {
+  clearContext,
+  measure,
+  setContext,
+  startSpan,
+  track,
+  type MonitorSpan,
+} from '@wiseflow/monitor-sdk';
 import { useAuthStore } from '../../stores/auth.store';
 import type { TreeNode, KnowledgeBaseTree } from '@wiseflow/shared';
 import styles from './index.module.less';
@@ -132,10 +141,13 @@ const USER_COLORS = [
   '#a1887f',
 ];
 
-function buildCursorLabel(user: { name: string; color: string }): HTMLElement {
+function buildCursorLabel(user: { name: string; color: string; cursorKey?: string }): HTMLElement {
   const cursor = document.createElement('span');
   cursor.classList.add('collaboration-cursor__caret');
   cursor.setAttribute('style', `border-color: ${user.color}`);
+  if (user.cursorKey) {
+    cursor.dataset.cursorKey = user.cursorKey;
+  }
   const label = document.createElement('div');
   label.classList.add('collaboration-cursor__label');
   label.setAttribute('style', `background-color: ${user.color}`);
@@ -199,6 +211,11 @@ export function KnowledgeBaseViewPage() {
   const user = useAuthStore((s) => s.user);
 
   const [isEditing, setIsEditing] = useState(false);
+  const docOpenSpanRef = useRef<MonitorSpan | null>(null);
+  const editorReadyRef = useRef<string | null>(null);
+  const contentLoadStartRef = useRef<number | null>(null);
+  const collabConnectStartRef = useRef<number | null>(null);
+  const paperRef = useRef<HTMLDivElement>(null);
 
   const treeQuery = useQuery<KnowledgeBaseTree>({
     queryKey: ['kb-tree', kbId],
@@ -224,9 +241,69 @@ export function KnowledgeBaseViewPage() {
     (activeDoc.data?.role as NodeRole | undefined) ??
     (treeQuery.data?.kb?.role as NodeRole | undefined);
   const canUserEdit = canEdit(userRole);
+
+  useEffect(() => {
+    if (!kbId || !treeQuery.isSuccess) {
+      return;
+    }
+    docOpenSpanRef.current?.mark('kb_tree_loaded', { nodeCount: treeQuery.data.nodes.length });
+  }, [kbId, treeQuery.data?.nodes.length, treeQuery.isSuccess]);
+
+  useEffect(() => {
+    if (!nodeId || !activeDoc.isSuccess) {
+      return;
+    }
+    docOpenSpanRef.current?.mark('node_detail_loaded', { role: activeDoc.data.role });
+  }, [activeDoc.data?.role, activeDoc.isSuccess, nodeId]);
+
+  useEffect(() => {
+    if (treeQuery.isError) {
+      track('business', 'kb_tree_load_failed', {
+        docId: nodeId,
+        errorMessage: accessErrorMessage(treeQuery.error, 'Knowledge base tree load failed'),
+        metadata: { kbId },
+        status: 'error',
+      });
+    }
+  }, [kbId, nodeId, treeQuery.error, treeQuery.isError]);
+
+  useEffect(() => {
+    if (activeDoc.isError) {
+      track('business', 'node_detail_load_failed', {
+        docId: nodeId,
+        errorMessage: accessErrorMessage(activeDoc.error, 'Node detail load failed'),
+        status: 'error',
+      });
+    }
+  }, [activeDoc.error, activeDoc.isError, nodeId]);
   const isOwner = userRole === 'OWNER';
   const requestedMode = searchParams.get('mode');
   const editable = canUserEdit && isEditing;
+
+  useEffect(() => {
+    if (!nodeId) {
+      clearContext(['docId']);
+      docOpenSpanRef.current = null;
+      return undefined;
+    }
+    setContext({ docId: nodeId });
+    const span = startSpan('doc_open', { docId: nodeId, metadata: { kbId } });
+    docOpenSpanRef.current = span;
+    track('business', 'doc_route_enter', {
+      docId: nodeId,
+      metadata: { kbId },
+      traceId: span.traceId,
+    });
+    editorReadyRef.current = null;
+    contentLoadStartRef.current = null;
+    collabConnectStartRef.current = null;
+    return () => {
+      if (docOpenSpanRef.current === span) {
+        docOpenSpanRef.current = null;
+      }
+      clearContext(['docId']);
+    };
+  }, [kbId, nodeId]);
 
   const setModeParam = useCallback(
     (mode: 'read' | 'edit') => {
@@ -244,11 +321,21 @@ export function KnowledgeBaseViewPage() {
 
   const enterEditMode = useCallback(() => {
     if (!canUserEdit) {
+      track('business', 'enter_edit_mode_blocked', {
+        docId: nodeId,
+        metadata: { role: userRole },
+        status: 'error',
+      });
       return;
     }
+    track('business', 'enter_edit_mode', {
+      docId: nodeId,
+      metadata: { role: userRole },
+      traceId: docOpenSpanRef.current?.traceId,
+    });
     setIsEditing(true);
     setModeParam('edit');
-  }, [canUserEdit, setModeParam]);
+  }, [canUserEdit, nodeId, setModeParam, userRole]);
 
   // ---- tree helpers ----
   function buildTreeData(nodes: TreeNode[]): TreeProps['treeData'] {
@@ -378,9 +465,31 @@ export function KnowledgeBaseViewPage() {
   // Fetch document content for reading mode via REST
   const contentQuery = useQuery({
     queryKey: ['node-content', nodeId],
-    queryFn: async () => normalizeDocContent(await nodesApi.getContent(nodeId!)),
+    queryFn: async () => {
+      contentLoadStartRef.current = performance.now();
+      const content = normalizeDocContent(await nodesApi.getContent(nodeId!));
+      const duration = Math.round(performance.now() - contentLoadStartRef.current);
+      measure('doc_content_loaded', duration, {
+        docId: nodeId,
+        eventType: 'business',
+        traceId: docOpenSpanRef.current?.traceId,
+      });
+      docOpenSpanRef.current?.mark('doc_content_loaded');
+      return content;
+    },
     enabled: !!nodeId && !isEditing,
   });
+
+  useEffect(() => {
+    if (contentQuery.isError) {
+      track('business', 'doc_content_load_failed', {
+        docId: nodeId,
+        errorMessage: accessErrorMessage(contentQuery.error, 'Document content load failed'),
+        status: 'error',
+        traceId: docOpenSpanRef.current?.traceId,
+      });
+    }
+  }, [contentQuery.error, contentQuery.isError, nodeId]);
 
   useEffect(() => {
     setIsEditing(canUserEdit && requestedMode === 'edit');
@@ -397,6 +506,12 @@ export function KnowledgeBaseViewPage() {
       return undefined;
     }
     const url = new URL(COLLAB_WS_URL);
+    collabConnectStartRef.current = performance.now();
+    track('business', 'collab_provider_create', {
+      docId: nodeId,
+      metadata: { endpoint: url.origin },
+      traceId: docOpenSpanRef.current?.traceId,
+    });
     const p = new WebsocketProvider(url.toString(), nodeId, ydoc, {
       params: { token, docId: nodeId },
       connect: true,
@@ -407,20 +522,35 @@ export function KnowledgeBaseViewPage() {
       email: user.email,
     });
 
-    console.log('[aware] self clientId (set):', p.awareness.clientID, 'name:', user.name);
-    console.log('[aware] states after set:', Array.from(p.awareness.getStates().entries()));
-
-    p.on('status', (e: { status: 'connecting' | 'connected' | 'disconnected' }) => {
+    const onStatus = (e: { status: 'connecting' | 'connected' | 'disconnected' }) => {
       setConnState(e.status);
-    });
+      const duration = collabConnectStartRef.current
+        ? Math.round(performance.now() - collabConnectStartRef.current)
+        : undefined;
+      track('business', 'collab_status_change', {
+        docId: nodeId,
+        duration,
+        metadata: { status: e.status },
+        status: e.status === 'connected' ? 'ok' : undefined,
+        traceId: docOpenSpanRef.current?.traceId,
+      });
+      if (e.status === 'connected' && duration !== undefined) {
+        measure('collab_connected', duration, {
+          docId: nodeId,
+          eventType: 'business',
+          traceId: docOpenSpanRef.current?.traceId,
+        });
+        docOpenSpanRef.current?.mark('collab_connected');
+      }
+    };
+    p.on('status', onStatus);
     const updatePeers = () => {
       const states = Array.from(p.awareness.getStates().entries());
-      console.log(
-        '[aware] updatePeers self clientId:',
-        p.awareness.clientID,
-        'states:',
-        JSON.parse(JSON.stringify(states))
-      );
+      track('business', 'collab_awareness_change', {
+        docId: nodeId,
+        metadata: { peerCount: states.length },
+        traceId: docOpenSpanRef.current?.traceId,
+      });
       setPeers(
         states.map(
           ([clientId, state]: [
@@ -439,6 +569,12 @@ export function KnowledgeBaseViewPage() {
     updatePeers();
     setProvider(p);
     return () => {
+      track('business', 'collab_provider_destroy', {
+        docId: nodeId,
+        metadata: { peerCount: p.awareness.getStates().size },
+        traceId: docOpenSpanRef.current?.traceId,
+      });
+      p.off('status', onStatus);
       p.awareness.off('change', updatePeers);
       p.destroy();
       setProvider(null);
@@ -450,6 +586,23 @@ export function KnowledgeBaseViewPage() {
       editable,
       autofocus: true,
       content: contentQuery.data ?? undefined,
+      onCreate: () => {
+        const mode = editable ? 'edit' : 'read';
+        const source = provider ? 'collab' : 'static';
+        const key = `${nodeId ?? 'none'}:${mode}:${source}`;
+        if (editorReadyRef.current === key) {
+          return;
+        }
+        editorReadyRef.current = key;
+        measure('editor_ready', 0, {
+          docId: nodeId,
+          eventType: 'business',
+          metadata: { editable, hasProvider: Boolean(provider) },
+          traceId: docOpenSpanRef.current?.traceId,
+        });
+        docOpenSpanRef.current?.mark('editor_ready', { editable, hasProvider: Boolean(provider) });
+        docOpenSpanRef.current?.end({ editable, hasProvider: Boolean(provider) });
+      },
       extensions: [
         StarterKit.configure({ history: false }),
         CodeBlockLowlight.configure({ lowlight }),
@@ -486,6 +639,7 @@ export function KnowledgeBaseViewPage() {
                   name: user?.name ?? 'A',
                   color: colorFor(user?.id ?? 'anon'),
                   email: user?.email,
+                  cursorKey: user?.id ?? user?.email ?? user?.name ?? 'anon',
                 },
                 render: buildCursorLabel,
               }),
@@ -504,6 +658,11 @@ export function KnowledgeBaseViewPage() {
   }, [editor, contentQuery.data, provider, isEditing]);
 
   const exitEditMode = useCallback(() => {
+    track('business', 'exit_edit_mode', {
+      docId: nodeId,
+      metadata: { hasEditor: Boolean(editor) },
+      traceId: docOpenSpanRef.current?.traceId,
+    });
     if (nodeId && editor) {
       queryClient.setQueryData(['node-content', nodeId], normalizeDocContent(editor.getJSON()));
       void queryClient.invalidateQueries({ queryKey: ['node-content', nodeId] });
@@ -844,7 +1003,8 @@ export function KnowledgeBaseViewPage() {
 
             {isEditing ? <EditorToolbar editor={editor} editable={editable} /> : null}
 
-            <div className={styles.paper}>
+            <div className={styles.paper} ref={paperRef}>
+              <RemoteNodeCursors editor={editor} provider={provider} containerRef={paperRef} />
               <span className={styles.updateTime}>recently update: {updateTime}</span>
               <div className={styles.titleRow}>
                 <Input

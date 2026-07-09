@@ -234,6 +234,37 @@
   opacity: 1;
 }
 
+.paper :global(.remote-node-cursor) {
+  position: absolute;
+  left: 38px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.paper :global(.remote-node-cursor > span) {
+  width: 2px;
+  height: 24px;
+  border-radius: 999px;
+}
+
+.paper :global(.remote-node-cursor > strong) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.16);
+}
+
 .titleRow {
   display: flex;
   align-items: baseline;
@@ -441,6 +472,10 @@
   border-left: 1px solid #0d0d0d;
   pointer-events: none;
   word-break: normal;
+}
+
+.editorSurface :global(.collaboration-cursor__caret[data-node-cursor-hidden]) {
+  display: none;
 }
 
 .editorSurface :global(.collaboration-cursor__label) {
