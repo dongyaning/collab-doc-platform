@@ -10,6 +10,7 @@ const NODE_CURSOR_TYPES = new Set(['image', 'widget']);
 type AwarenessUser = {
   name?: string;
   color?: string;
+  avatarUrl?: string;
   cursorKey?: string;
 };
 
@@ -21,6 +22,7 @@ type AwarenessCursor = {
 type AwarenessState = {
   user?: AwarenessUser;
   cursor?: AwarenessCursor | null;
+  nodeCursor?: AwarenessCursor | null;
 };
 
 type AbsoluteCursor = {
@@ -38,6 +40,7 @@ type RemoteNodeCursor = {
   cursorKey?: string;
   name: string;
   color: string;
+  avatarUrl?: string;
   top: number;
 };
 
@@ -46,6 +49,24 @@ type RemoteNodeCursorsProps = {
   provider: WebsocketProvider | null;
   containerRef: RefObject<HTMLDivElement>;
 };
+
+function avatarFallback(name: string | undefined): string {
+  return (name?.trim().slice(0, 1) || 'A').toUpperCase();
+}
+
+function CursorAvatar({ cursor }: { cursor: RemoteNodeCursor }) {
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
+  if (cursor.avatarUrl && failedAvatarUrl !== cursor.avatarUrl) {
+    return (
+      <img
+        src={cursor.avatarUrl}
+        alt=""
+        onError={() => setFailedAvatarUrl(cursor.avatarUrl ?? null)}
+      />
+    );
+  }
+  return <>{avatarFallback(cursor.name)}</>;
+}
 
 function toAbsolutePos(editor: Editor, value: unknown): number | null {
   const ystate = ySyncPluginKey.getState(editor.state);
@@ -154,10 +175,11 @@ function readRemoteNodeCursors(
       return;
     }
     const state = rawState as AwarenessState;
-    if (!state.cursor) {
+    const awarenessCursor = state.nodeCursor ?? state.cursor;
+    if (!awarenessCursor) {
       return;
     }
-    const cursor = getAbsoluteCursor(editor, state.cursor);
+    const cursor = getAbsoluteCursor(editor, awarenessCursor);
     if (!cursor) {
       return;
     }
@@ -174,6 +196,7 @@ function readRemoteNodeCursors(
       cursorKey: state.user?.cursorKey,
       name: state.user?.name ?? 'A',
       color: state.user?.color ?? '#888',
+      avatarUrl: state.user?.avatarUrl,
       top: nodeRect.top - containerRect.top + nodeRect.height / 2,
     });
   });
@@ -227,7 +250,7 @@ export function RemoteNodeCursors({ editor, provider, containerRef }: RemoteNode
         >
           <span style={{ backgroundColor: cursor.color }} />
           <strong style={{ backgroundColor: cursor.color }}>
-            {cursor.name.slice(0, 1).toUpperCase()}
+            <CursorAvatar cursor={cursor} />
           </strong>
         </div>
       ))}

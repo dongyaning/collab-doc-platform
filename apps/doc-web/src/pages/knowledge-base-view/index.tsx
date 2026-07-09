@@ -141,7 +141,16 @@ const USER_COLORS = [
   '#a1887f',
 ];
 
-function buildCursorLabel(user: { name: string; color: string; cursorKey?: string }): HTMLElement {
+function avatarFallback(name: string | undefined): string {
+  return (name?.trim().slice(0, 1) || 'A').toUpperCase();
+}
+
+function buildCursorLabel(user: {
+  name: string;
+  color: string;
+  avatarUrl?: string;
+  cursorKey?: string;
+}): HTMLElement {
   const cursor = document.createElement('span');
   cursor.classList.add('collaboration-cursor__caret');
   cursor.setAttribute('style', `border-color: ${user.color}`);
@@ -151,7 +160,19 @@ function buildCursorLabel(user: { name: string; color: string; cursorKey?: strin
   const label = document.createElement('div');
   label.classList.add('collaboration-cursor__label');
   label.setAttribute('style', `background-color: ${user.color}`);
-  label.textContent = user.name.slice(0, 1).toUpperCase();
+  label.textContent = avatarFallback(user.name);
+  if (user.avatarUrl) {
+    const img = document.createElement('img');
+    img.src = user.avatarUrl;
+    img.alt = '';
+    img.referrerPolicy = 'no-referrer';
+    img.onerror = () => {
+      img.remove();
+      label.textContent = avatarFallback(user.name);
+    };
+    label.textContent = '';
+    label.appendChild(img);
+  }
   cursor.appendChild(label);
   return cursor;
 }
@@ -459,7 +480,7 @@ export function KnowledgeBaseViewPage() {
   const [provider, setProvider] = useState<WebsocketProvider | null>(null);
   const [connState, setConnState] = useState<ConnState>('disconnected');
   const [peers, setPeers] = useState<
-    Array<{ id: number; name: string; color: string; email?: string }>
+    Array<{ id: number; name: string; color: string; email?: string; avatarUrl?: string }>
   >([]);
 
   // Fetch document content for reading mode via REST
@@ -520,6 +541,7 @@ export function KnowledgeBaseViewPage() {
       name: user.name,
       color: colorFor(user.id),
       email: user.email,
+      avatarUrl: user.avatarUrl,
     });
 
     const onStatus = (e: { status: 'connecting' | 'connected' | 'disconnected' }) => {
@@ -555,12 +577,13 @@ export function KnowledgeBaseViewPage() {
         states.map(
           ([clientId, state]: [
             number,
-            { user?: { name?: string; color?: string; email?: string } },
+            { user?: { name?: string; color?: string; email?: string; avatarUrl?: string } },
           ]) => ({
             id: clientId,
             name: state.user?.name ?? 'Anonymous',
             color: state.user?.color ?? '#888',
             email: state.user?.email,
+            avatarUrl: state.user?.avatarUrl,
           })
         )
       );
@@ -639,6 +662,7 @@ export function KnowledgeBaseViewPage() {
                   name: user?.name ?? 'A',
                   color: colorFor(user?.id ?? 'anon'),
                   email: user?.email,
+                  avatarUrl: user?.avatarUrl,
                   cursorKey: user?.id ?? user?.email ?? user?.name ?? 'anon',
                 },
                 render: buildCursorLabel,
@@ -1835,7 +1859,7 @@ function PeerList({
   peers,
   selfId,
 }: {
-  peers: Array<{ id: number; name: string; color: string; email?: string }>;
+  peers: Array<{ id: number; name: string; color: string; email?: string; avatarUrl?: string }>;
   selfId: number | undefined;
 }) {
   if (peers.length === 0) return null;
@@ -1849,8 +1873,12 @@ function PeerList({
           content={
             <div style={{ minWidth: 200 }}>
               <Space align="start" size={12}>
-                <Avatar size={40} style={{ background: p.color, fontSize: 18, flexShrink: 0 }}>
-                  {p.name.slice(0, 1).toUpperCase()}
+                <Avatar
+                  size={40}
+                  src={p.avatarUrl}
+                  style={{ background: p.color, fontSize: 18, flexShrink: 0 }}
+                >
+                  {avatarFallback(p.name)}
                 </Avatar>
                 <div>
                   <Text strong style={{ fontSize: 14, display: 'block' }}>
@@ -1876,13 +1904,14 @@ function PeerList({
         >
           <Avatar
             size="small"
+            src={p.avatarUrl}
             style={{
               background: p.color,
               border: p.id === selfId ? '2px solid #333' : undefined,
               cursor: 'pointer',
             }}
           >
-            {p.name.slice(0, 1).toUpperCase()}
+            {avatarFallback(p.name)}
           </Avatar>
         </Popover>
       ))}

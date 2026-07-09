@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type FocusEvent } from 'react';
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
 import { absolutePositionToRelativePosition, ySyncPluginKey } from 'y-prosemirror';
 import { getWidget, normalizeWidgetProps } from './registry';
@@ -16,17 +16,27 @@ function getCollaborationProvider(editor: NodeViewProps['editor']): AwarenessPro
   return (extension?.options.provider as AwarenessProvider | undefined) ?? null;
 }
 
-function syncWidgetCursor(editor: NodeViewProps['editor'], pos: number, nodeSize: number) {
+function setWidgetNodeCursor(
+  editor: NodeViewProps['editor'],
+  pos: number,
+  nodeSize: number
+): boolean {
   const provider = getCollaborationProvider(editor);
   const ystate = ySyncPluginKey.getState(editor.state);
   if (!provider?.awareness || !ystate?.type || !ystate?.binding?.mapping) {
-    return;
+    return false;
   }
 
-  provider.awareness.setLocalStateField('cursor', {
+  provider.awareness.setLocalStateField('nodeCursor', {
     anchor: absolutePositionToRelativePosition(pos, ystate.type, ystate.binding.mapping),
     head: absolutePositionToRelativePosition(pos + nodeSize, ystate.type, ystate.binding.mapping),
   });
+  return true;
+}
+
+function clearWidgetNodeCursor(editor: NodeViewProps['editor']) {
+  const provider = getCollaborationProvider(editor);
+  provider?.awareness?.setLocalStateField('nodeCursor', null);
 }
 
 export function WidgetNodeView(props: NodeViewProps) {
@@ -35,22 +45,32 @@ export function WidgetNodeView(props: NodeViewProps) {
   const { widgetType, props: widgetProps } = node.attrs;
   const definition = getWidget(widgetType as string);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const ownsNodeCursorRef = useRef(false);
   const editable = editor.isEditable;
   const mode = editable ? 'edit' : 'read';
   const normalizedProps = normalizeWidgetProps(definition, widgetProps);
 
   useEffect(() => {
     if (!editor || typeof getPos !== 'function') {
-      return;
+      return undefined;
     }
     const update = () => {
       const pos = getPos();
       const { from, to } = editor.state.selection;
-      setIsSelected(from <= pos && to >= pos + node.nodeSize);
+      const nextSelected = from <= pos && to >= pos + node.nodeSize;
+      setIsSelected(nextSelected);
+      if (!nextSelected && ownsNodeCursorRef.current) {
+        clearWidgetNodeCursor(editor);
+        ownsNodeCursorRef.current = false;
+      }
     };
     editor.on('selectionUpdate', update);
     update();
     return () => {
+      if (ownsNodeCursorRef.current) {
+        clearWidgetNodeCursor(editor);
+        ownsNodeCursorRef.current = false;
+      }
       editor.off('selectionUpdate', update);
     };
   }, [editor, getPos, node.nodeSize]);
@@ -59,14 +79,27 @@ export function WidgetNodeView(props: NodeViewProps) {
     if (editor && typeof getPos === 'function') {
       const pos = getPos();
       editor.commands.setNodeSelection(pos);
-      syncWidgetCursor(editor, pos, node.nodeSize);
+      ownsNodeCursorRef.current = setWidgetNodeCursor(editor, pos, node.nodeSize);
     }
   }, [editor, getPos, node.nodeSize]);
 
   const handleFocusInside = useCallback(() => {
     selectWidgetNode();
-    requestAnimationFrame(selectWidgetNode);
   }, [selectWidgetNode]);
+
+  const handleBlurInside = useCallback(
+    (event: FocusEvent<HTMLDivElement>) => {
+      const nextTarget = event.relatedTarget;
+      if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
+        return;
+      }
+      if (ownsNodeCursorRef.current) {
+        clearWidgetNodeCursor(editor);
+        ownsNodeCursorRef.current = false;
+      }
+    },
+    [editor]
+  );
 
   const handleUpdateProps = useCallback(
     (next: Record<string, unknown>) => {
@@ -97,6 +130,7 @@ export function WidgetNodeView(props: NodeViewProps) {
         }}
         onClick={selectWidgetNode}
         onFocusCapture={handleFocusInside}
+        onBlurCapture={handleBlurInside}
         ref={wrapperRef}
       >
         Unknown widget: {String(widgetType ?? '')}
@@ -116,7 +150,8 @@ export function WidgetNodeView(props: NodeViewProps) {
         cursor: 'pointer',
       }}
       onClick={selectWidgetNode}
-      onFocusCapture={selectWidgetNode}
+      onFocusCapture={handleFocusInside}
+      onBlurCapture={handleBlurInside}
       ref={wrapperRef}
     >
       <WidgetComponent
