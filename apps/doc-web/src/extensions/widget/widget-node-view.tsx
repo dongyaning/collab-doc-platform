@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
-import { getWidget } from './registry';
+import { getWidget, normalizeWidgetProps } from './registry';
 
 export function WidgetNodeView(props: NodeViewProps) {
   const { node, updateAttributes, editor, getPos, selected } = props;
@@ -8,6 +8,9 @@ export function WidgetNodeView(props: NodeViewProps) {
   const { widgetType, props: widgetProps } = node.attrs;
   const definition = getWidget(widgetType as string);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const editable = editor.isEditable;
+  const mode = editable ? 'edit' : 'read';
+  const normalizedProps = normalizeWidgetProps(definition, widgetProps);
 
   useEffect(() => {
     if (!editor || typeof getPos !== 'function') return;
@@ -32,9 +35,10 @@ export function WidgetNodeView(props: NodeViewProps) {
 
   const handleUpdateProps = useCallback(
     (next: Record<string, unknown>) => {
-      updateAttributes({ props: next });
+      if (!editable) return;
+      updateAttributes({ props: normalizeWidgetProps(definition, next) });
     },
-    [updateAttributes]
+    [definition, editable, updateAttributes]
   );
 
   const showSelected = isSelected || selected;
@@ -77,9 +81,11 @@ export function WidgetNodeView(props: NodeViewProps) {
       ref={wrapperRef}
     >
       <WidgetComponent
-        props={(widgetProps as Record<string, unknown>) ?? {}}
+        props={normalizedProps}
         updateProps={handleUpdateProps}
         selected={showSelected}
+        mode={mode}
+        editable={editable}
       />
     </NodeViewWrapper>
   );

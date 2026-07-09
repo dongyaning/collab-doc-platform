@@ -379,17 +379,7 @@ export function EditorToolbar({ editor, editable }: EditorToolbarProps) {
               icon: widget.icon,
               label: widget.label,
               onClick: () => {
-                editor
-                  .chain()
-                  .focus()
-                  .insertContent({
-                    type: 'widget',
-                    attrs: {
-                      widgetType: widget.type,
-                      props: widget.defaultProps ?? {},
-                    },
-                  })
-                  .run();
+                editor.chain().focus().insertWidget(widget.type).run();
               },
             })),
           }}

@@ -1,10 +1,5 @@
 import { Node, type CommandProps } from '@tiptap/core';
-import { getWidget } from './registry';
-
-type WidgetAttrs = {
-  widgetType?: string | null;
-  props?: Record<string, unknown>;
-};
+import { DEFAULT_WIDGET_VERSION, createWidgetAttrs, type WidgetAttrs } from './registry';
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -35,6 +30,17 @@ export const WidgetExtension = Node.create({
         },
         parseHTML: (el: HTMLElement) => el.getAttribute('data-widget-type'),
       },
+      version: {
+        default: DEFAULT_WIDGET_VERSION,
+        renderHTML: (attrs: WidgetAttrs) => ({
+          'data-widget-version': String(attrs.version ?? DEFAULT_WIDGET_VERSION),
+        }),
+        parseHTML: (el: HTMLElement) => {
+          const raw = el.getAttribute('data-widget-version');
+          const version = Number(raw);
+          return Number.isFinite(version) && version > 0 ? version : DEFAULT_WIDGET_VERSION;
+        },
+      },
       props: {
         default: {},
         renderHTML: (attrs: WidgetAttrs) => {
@@ -61,10 +67,9 @@ export const WidgetExtension = Node.create({
       insertWidget:
         (widgetType: string, props?: Record<string, unknown>) =>
         ({ commands }: CommandProps) => {
-          const def = getWidget(widgetType);
           return commands.insertContent({
             type: this.name,
-            attrs: { widgetType, props: props ?? def?.defaultProps ?? {} },
+            attrs: createWidgetAttrs(widgetType, props),
           });
         },
     };
@@ -79,6 +84,7 @@ export const WidgetExtension = Node.create({
       'div',
       {
         'data-widget-type': node.attrs.widgetType,
+        'data-widget-version': String(node.attrs.version ?? DEFAULT_WIDGET_VERSION),
         'data-widget-props': JSON.stringify(node.attrs.props),
       },
     ];
