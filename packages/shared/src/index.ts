@@ -54,3 +54,5 @@ export interface NodeDetail {
   createdAt: string;
   updatedAt: string;
 }
+
+export * from './monitor.js';
