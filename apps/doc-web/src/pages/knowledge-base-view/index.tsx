@@ -478,7 +478,7 @@ export function KnowledgeBaseViewPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const ydoc = useMemo(() => new Y.Doc(), [nodeId]);
   const [provider, setProvider] = useState<WebsocketProvider | null>(null);
-  const [connState, setConnState] = useState<ConnState>('disconnected');
+  const [connState, setConnState] = useState<ConnState>('connecting');
   const [peers, setPeers] = useState<
     Array<{ id: number; name: string; color: string; email?: string; avatarUrl?: string }>
   >([]);
