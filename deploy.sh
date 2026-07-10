@@ -32,6 +32,7 @@ setup_env() {
     info "生成 .env.production ..."
     cat > .env.production <<'ENVEOF'
 JWT_SECRET=change-me-to-a-random-string
+VITE_COLLAB_WS_URL=wss://wiseflow.site/collab
 ENVEOF
     info ".env.production 已生成，请修改 JWT_SECRET 后再部署"
     ${EDITOR:-vi} .env.production
