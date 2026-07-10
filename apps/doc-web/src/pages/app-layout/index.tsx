@@ -1,6 +1,7 @@
 import { Outlet, useNavigate } from 'react-router-dom';
-import { Avatar, Button, Layout, Space, Tooltip, Typography } from 'antd';
+import { Button, Layout, Space, Tooltip, Typography } from 'antd';
 import { DashboardOutlined, LogoutOutlined } from '@ant-design/icons';
+import { UserAvatar } from '../../components/user-avatar';
 import { WiseFlowLogo } from '../../components/wiseflow-logo';
 import { Navigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/auth.store';
@@ -8,10 +9,6 @@ import styles from './index.module.less';
 
 const { Header, Content } = Layout;
 const { Text } = Typography;
-
-function avatarFallback(name: string | undefined): string {
-  return (name?.trim().slice(0, 1) || 'A').toUpperCase();
-}
 
 export function AppLayout() {
   const token = useAuthStore((s) => s.token);
@@ -40,9 +37,12 @@ export function AppLayout() {
               onClick={() => navigate('/performance')}
             />
           </Tooltip>
-          <Avatar size={28} src={user?.avatarUrl} className={styles.userAvatar}>
-            {avatarFallback(user?.name)}
-          </Avatar>
+          <UserAvatar
+            size={28}
+            avatarUrl={user?.avatarUrl}
+            fallbackName={user?.name}
+            className={styles.userAvatar}
+          />
           <Text type="secondary">{user?.name}</Text>
           <Button
             icon={<LogoutOutlined />}

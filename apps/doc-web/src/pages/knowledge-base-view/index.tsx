@@ -19,6 +19,7 @@ import { common, createLowlight } from 'lowlight';
 import { ResizableImage, ImageNodeView } from '../../extensions/image';
 import { WidgetExtension, WidgetNodeView } from '../../extensions/widget';
 import { registerPresetWidgets } from '../../extensions/widget/presets';
+import { UserAvatar } from '../../components/user-avatar';
 import { EditorToolbar } from './editor-toolbar';
 import { RemoteNodeCursors } from './remote-node-cursors';
 import * as Y from 'yjs';
@@ -159,19 +160,23 @@ function buildCursorLabel(user: {
   }
   const label = document.createElement('div');
   label.classList.add('collaboration-cursor__label');
-  label.setAttribute('style', `background-color: ${user.color}`);
+  label.style.backgroundColor = user.color;
   label.textContent = avatarFallback(user.name);
   if (user.avatarUrl) {
     const img = document.createElement('img');
     img.src = user.avatarUrl;
     img.alt = '';
     img.referrerPolicy = 'no-referrer';
+    img.onload = () => {
+      label.style.backgroundColor = 'transparent';
+      label.textContent = '';
+      label.appendChild(img);
+    };
     img.onerror = () => {
       img.remove();
+      label.style.backgroundColor = user.color;
       label.textContent = avatarFallback(user.name);
     };
-    label.textContent = '';
-    label.appendChild(img);
   }
   cursor.appendChild(label);
   return cursor;
@@ -1876,9 +1881,12 @@ function PeerList({
   selfId: number | undefined;
 }) {
   if (peers.length === 0) return null;
+  const visiblePeers = peers.slice(0, 5);
+  const hiddenPeerCount = peers.length - visiblePeers.length;
+
   return (
-    <Avatar.Group max={{ count: 5 }}>
-      {peers.map((p) => (
+    <div className={styles.peerAvatarList}>
+      {visiblePeers.map((p) => (
         <Popover
           key={p.id}
           trigger="hover"
@@ -1886,13 +1894,18 @@ function PeerList({
           content={
             <div style={{ minWidth: 200 }}>
               <Space align="start" size={12}>
-                <Avatar
+                <UserAvatar
                   size={40}
-                  src={p.avatarUrl}
-                  style={{ background: p.color, fontSize: 18, flexShrink: 0 }}
-                >
-                  {avatarFallback(p.name)}
-                </Avatar>
+                  avatarUrl={p.avatarUrl}
+                  fallbackName={p.name}
+                  fallbackBackground={p.color}
+                  style={{
+                    border: `2px solid ${p.color}`,
+                    boxSizing: 'border-box',
+                    flexShrink: 0,
+                    fontSize: 18,
+                  }}
+                />
                 <div>
                   <Text strong style={{ fontSize: 14, display: 'block' }}>
                     {p.name}
@@ -1915,20 +1928,22 @@ function PeerList({
             </div>
           }
         >
-          <Avatar
-            size="small"
-            src={p.avatarUrl}
-            style={{
-              background: p.color,
-              border: p.id === selfId ? '2px solid #333' : undefined,
-              cursor: 'pointer',
-            }}
-          >
-            {avatarFallback(p.name)}
-          </Avatar>
+          <span className={styles.peerAvatarTrigger}>
+            <UserAvatar
+              size="small"
+              avatarUrl={p.avatarUrl}
+              fallbackName={p.name}
+              fallbackBackground={p.color}
+              style={{
+                border: p.id === selfId ? '2px solid #000' : `2px solid ${p.color}`,
+                boxSizing: 'border-box',
+              }}
+            />
+          </span>
         </Popover>
       ))}
-    </Avatar.Group>
+      {hiddenPeerCount > 0 ? <Avatar size="small">+{hiddenPeerCount}</Avatar> : null}
+    </div>
   );
 }
 

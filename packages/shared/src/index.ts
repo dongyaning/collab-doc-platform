@@ -17,45 +17,45 @@ export interface DefaultAvatar {
   color: string;
 }
 
-function diceBearPersonasUrl(seed: string): string {
-  return `https://api.dicebear.com/9.x/personas/svg?seed=${encodeURIComponent(seed)}`;
+export function diceBearCroodlesUrl(seed: string): string {
+  return `https://api.dicebear.com/9.x/croodles/svg?seed=${encodeURIComponent(seed)}`;
 }
 
 export const DEFAULT_AVATARS: DefaultAvatar[] = [
   {
-    id: 'dong',
-    label: 'Dong',
-    url: diceBearPersonasUrl('Dong'),
+    id: 'atlas',
+    label: 'Atlas',
+    url: diceBearCroodlesUrl('Atlas'),
     color: '#2563eb',
   },
   {
-    id: 'alice',
-    label: 'Alice',
-    url: diceBearPersonasUrl('Alice'),
+    id: 'juniper',
+    label: 'Juniper',
+    url: diceBearCroodlesUrl('Juniper'),
     color: '#0f766e',
   },
   {
-    id: 'ming',
-    label: 'Ming',
-    url: diceBearPersonasUrl('Ming'),
+    id: 'marigold',
+    label: 'Marigold',
+    url: diceBearCroodlesUrl('Marigold'),
     color: '#be123c',
   },
   {
-    id: 'nora',
-    label: 'Nora',
-    url: diceBearPersonasUrl('Nora'),
+    id: 'sol',
+    label: 'Sol',
+    url: diceBearCroodlesUrl('Sol'),
     color: '#b45309',
   },
   {
-    id: 'reviewer',
-    label: 'Reviewer',
-    url: diceBearPersonasUrl('Reviewer'),
+    id: 'indigo',
+    label: 'Indigo',
+    url: diceBearCroodlesUrl('Indigo'),
     color: '#7c3aed',
   },
   {
-    id: 'editor',
-    label: 'Editor',
-    url: diceBearPersonasUrl('Editor'),
+    id: 'tide',
+    label: 'Tide',
+    url: diceBearCroodlesUrl('Tide'),
     color: '#475569',
   },
 ];

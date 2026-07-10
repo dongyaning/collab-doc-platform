@@ -277,6 +277,22 @@
   opacity: 1;
 }
 
+.peerAvatarList {
+  display: flex;
+  align-items: center;
+  gap: 0px;
+}
+
+.peerAvatarList :global(.ant-avatar) {
+  flex: 0 0 auto;
+}
+
+.peerAvatarTrigger {
+  display: inline-flex;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
 .paper :global(.remote-node-cursor) {
   position: absolute;
   left: 38px;
@@ -307,6 +323,10 @@
   font-weight: 700;
   line-height: 1;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.16);
+}
+
+.paper :global(.remote-node-cursor > strong:has(> img)) {
+  background-color: transparent !important;
 }
 
 .paper :global(.remote-node-cursor > strong > img) {

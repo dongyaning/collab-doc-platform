@@ -32,13 +32,13 @@ const seedUsers = [
     email: process.env.SEED_USER_EMAIL ?? 'demo@collab.dev',
     password: process.env.SEED_USER_PASSWORD ?? 'demo1234',
     name: process.env.SEED_USER_NAME ?? 'Demo',
-    avatarUrl: DEFAULT_AVATARS[0]?.url ?? 'https://api.dicebear.com/9.x/personas/svg?seed=Dong',
+    avatarUrl: DEFAULT_AVATARS[0]?.url ?? 'https://api.dicebear.com/9.x/croodles/svg?seed=Atlas',
   },
   {
     email: process.env.SEED_SECOND_USER_EMAIL ?? 'reviewer@collab.dev',
     password: process.env.SEED_SECOND_USER_PASSWORD ?? 'reviewer1234',
     name: process.env.SEED_SECOND_USER_NAME ?? 'Reviewer',
-    avatarUrl: DEFAULT_AVATARS[1]?.url ?? 'https://api.dicebear.com/9.x/personas/svg?seed=Alice',
+    avatarUrl: DEFAULT_AVATARS[1]?.url ?? 'https://api.dicebear.com/9.x/croodles/svg?seed=Juniper',
   },
 ];
 
