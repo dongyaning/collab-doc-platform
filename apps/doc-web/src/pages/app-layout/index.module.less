@@ -35,6 +35,21 @@
   gap: 8px;
 }
 
+@media (max-width: 560px) {
+  .topBar {
+    padding: 0 12px;
+  }
+
+  .brandText,
+  .topBarRight :global(.ant-typography) {
+    display: none;
+  }
+
+  .topBarRight {
+    gap: 4px;
+  }
+}
+
 .userAvatar {
   flex: 0 0 auto;
   background: #3b5bdb;

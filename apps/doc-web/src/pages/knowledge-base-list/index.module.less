@@ -50,3 +50,19 @@
     padding-left: 4px;
   }
 }
+
+@media (max-width: 560px) {
+  .content {
+    padding: 16px;
+  }
+
+  .list :global(.ant-list-item) {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .list :global(.ant-list-item-action) {
+    margin-inline-start: 0;
+  }
+}

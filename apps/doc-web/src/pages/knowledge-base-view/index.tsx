@@ -889,10 +889,16 @@ export function KnowledgeBaseViewPage() {
     <Layout className={styles.layout}>
       <Sider
         width={280}
-        collapsedWidth={48}
+        collapsedWidth={0}
+        breakpoint="md"
         className={styles.sider}
         collapsible
         collapsed={siderCollapsed}
+        onBreakpoint={(broken) => {
+          if (broken) {
+            setSiderCollapsed(true);
+          }
+        }}
         onCollapse={setSiderCollapsed}
         trigger={null}
       >
@@ -962,6 +968,13 @@ export function KnowledgeBaseViewPage() {
       </Sider>
 
       <Content className={styles.contentArea}>
+        <Button
+          aria-label="Open document tree"
+          className={styles.mobileSiderTrigger}
+          icon={<MenuUnfoldOutlined />}
+          onClick={() => setSiderCollapsed(false)}
+          type="text"
+        />
         {loading.isDocLoading ? (
           <div className={styles.emptyState}>
             <Spin size="large" />

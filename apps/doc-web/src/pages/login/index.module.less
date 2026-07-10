@@ -8,8 +8,18 @@
 }
 
 .card {
-  width: 400px;
+  width: min(400px, 100%);
   box-shadow: @shadow-card;
+}
+
+@media (max-width: 480px) {
+  .page {
+    padding: 16px;
+  }
+
+  .card {
+    box-shadow: none;
+  }
 }
 
 .title {
