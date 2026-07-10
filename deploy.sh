@@ -27,6 +27,34 @@ check_prereqs() {
   docker info &>/dev/null || { error "Docker 未运行"; exit 1; }
 }
 
+ensure_swap() {
+  local swap_file="${SWAP_FILE:-/swapfile}"
+  local swap_size_mb="${SWAP_SIZE_MB:-2048}"
+
+  if swapon --show --noheadings | grep -q .; then
+    info "已检测到启用的 swap，跳过创建"
+    return 0
+  fi
+
+  if [ "$(id -u)" -ne 0 ]; then
+    warn "未以 root 运行，跳过 swap 创建；2GB 内存服务器建议配置 ${swap_size_mb}MB swap"
+    return 0
+  fi
+
+  info "未检测到 swap，创建 ${swap_size_mb}MB swap 以降低构建时内存耗尽的风险..."
+  if ! fallocate -l "${swap_size_mb}M" "$swap_file" 2>/dev/null; then
+    dd if=/dev/zero of="$swap_file" bs=1M count="$swap_size_mb" status=progress
+  fi
+  chmod 600 "$swap_file"
+  mkswap "$swap_file" >/dev/null
+  swapon "$swap_file"
+
+  if ! grep -qE "^[^#]*[[:space:]]${swap_file}[[:space:]]" /etc/fstab; then
+    printf '%s none swap sw 0 0\n' "$swap_file" >> /etc/fstab
+  fi
+  info "swap 已启用并写入 /etc/fstab"
+}
+
 setup_env() {
   if [ ! -f .env.production ]; then
     info "生成 .env.production ..."
@@ -123,6 +151,7 @@ cleanup() {
 
 # ---- Main ----
 check_prereqs
+ensure_swap
 
 case "${1:-}" in
   --update)
