@@ -18,12 +18,17 @@ warn()  { printf "${YELLOW}[WARN]${NC}  %s\n" "$*"; }
 error() { printf "${RED}[ERROR]${NC} %s\n" "$*"; }
 
 check_prereqs() {
-  for cmd in docker docker-compose git; do
+  for cmd in docker git; do
     if ! command -v "$cmd" &>/dev/null; then
       error "缺少依赖: $cmd，请先安装"
       exit 1
     fi
   done
+  # 新版 docker 内置 compose，独立 docker-compose 不一定存在
+  if ! docker compose version &>/dev/null; then
+    error "docker compose 插件不可用"
+    exit 1
+  fi
   docker info &>/dev/null || { error "Docker 未运行"; exit 1; }
 }
 
@@ -66,7 +71,7 @@ ENVEOF
     ${EDITOR:-vi} .env.production
   fi
 
-  # source it so docker-compose picks up the variables
+  # source it so docker compose picks up the variables
   set -a; source .env.production; set +a
 }
 
@@ -80,7 +85,7 @@ update_code() {
 wait_for_postgres() {
   info "等待 PostgreSQL 就绪..."
   for i in $(seq 1 30); do
-    if docker-compose exec -T postgres pg_isready -U collab -d collab_doc &>/dev/null; then
+    if docker compose exec -T postgres pg_isready -U collab -d collab_doc &>/dev/null; then
       info "PostgreSQL 已就绪"
       return 0
     fi
@@ -88,22 +93,22 @@ wait_for_postgres() {
   done
 
   error "PostgreSQL 未就绪，请检查 postgres 容器日志"
-  docker-compose logs --tail=80 postgres || true
+  docker compose logs --tail=80 postgres || true
   exit 1
 }
 
 run_migrations() {
   info "执行数据库迁移..."
   # 确保 postgres 完全就绪后，在 server 容器内执行 migrate
-  # DATABASE_URL 在 docker-compose.yml 的 server 服务中已定义，无需从宿主机传入
-  docker-compose run --rm --no-deps \
+  # DATABASE_URL 在 docker compose.yml 的 server 服务中已定义，无需从宿主机传入
+  docker compose run --rm --no-deps \
     server npx prisma migrate deploy
 }
 
 seed_demo() {
   info "初始化演示账号..."
   # 首次执行可能报错（种子已存在），忽略
-  docker-compose run --rm --no-deps \
+  docker compose run --rm --no-deps \
     -e SEED_USER_EMAIL="${SEED_USER_EMAIL:-demo@collab.dev}" \
     -e SEED_USER_PASSWORD="${SEED_USER_PASSWORD:-demo1234}" \
     -e SEED_USER_NAME="${SEED_USER_NAME:-Dong Yaning}" \
@@ -118,14 +123,20 @@ deploy() {
 
   if [ "$update_only" = true ]; then
     info "增量更新：重建 server 和 web ..."
-    docker-compose up -d postgres
-    docker-compose build server web
-    docker-compose up -d --no-deps server web
+    docker compose up -d postgres
+    # 串行构建，避免 1.6GB 内存并行 OOM
+    # web 构建最重（tsc + vite），单独先做
+    info "编译 web ..."
+    DOCKER_BUILDKIT=1 docker compose build web
+    info "编译 server ..."
+    DOCKER_BUILDKIT=1 docker compose build server
+    info "重启服务 ..."
+    docker compose up -d --no-deps server web
   else
     info "全量部署：构建并启动所有服务..."
-    docker-compose down --remove-orphans 2>/dev/null || true
-    docker-compose build
-    docker-compose up -d
+    docker compose down --remove-orphans 2>/dev/null || true
+    COMPOSE_BAKE=true docker compose build
+    docker compose up -d
   fi
 
   wait_for_postgres
@@ -133,7 +144,7 @@ deploy() {
   seed_demo
 
   local web_port
-  web_port=$(docker-compose port web 80 2>/dev/null | sed 's/.*://' || echo "80")
+  web_port=$(docker compose port web 80 2>/dev/null | sed 's/.*://' || echo "80")
   info ""
   printf "${GREEN}========================================${NC}\n"
   printf "${GREEN}  部署完成！${NC}\n"
