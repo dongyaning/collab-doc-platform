@@ -17,45 +17,45 @@ export interface DefaultAvatar {
   color: string;
 }
 
-export function diceBearCroodlesUrl(seed: string): string {
-  return `https://api.dicebear.com/9.x/croodles/svg?seed=${encodeURIComponent(seed)}`;
+export function croodlesAvatarUrl(id: string): string {
+  return `/uploads/avatars/croodles-${id}.svg`;
 }
 
 export const DEFAULT_AVATARS: DefaultAvatar[] = [
   {
     id: 'atlas',
     label: 'Atlas',
-    url: diceBearCroodlesUrl('Atlas'),
+    url: croodlesAvatarUrl('atlas'),
     color: '#2563eb',
   },
   {
     id: 'juniper',
     label: 'Juniper',
-    url: diceBearCroodlesUrl('Juniper'),
+    url: croodlesAvatarUrl('juniper'),
     color: '#0f766e',
   },
   {
     id: 'marigold',
     label: 'Marigold',
-    url: diceBearCroodlesUrl('Marigold'),
+    url: croodlesAvatarUrl('marigold'),
     color: '#be123c',
   },
   {
     id: 'sol',
     label: 'Sol',
-    url: diceBearCroodlesUrl('Sol'),
+    url: croodlesAvatarUrl('sol'),
     color: '#b45309',
   },
   {
     id: 'indigo',
     label: 'Indigo',
-    url: diceBearCroodlesUrl('Indigo'),
+    url: croodlesAvatarUrl('indigo'),
     color: '#7c3aed',
   },
   {
     id: 'tide',
     label: 'Tide',
-    url: diceBearCroodlesUrl('Tide'),
+    url: croodlesAvatarUrl('tide'),
     color: '#475569',
   },
 ];
