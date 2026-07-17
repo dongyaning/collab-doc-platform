@@ -150,25 +150,30 @@ export function PerformancePage() {
         <Spin spinning={isLoading}>
           <div className={styles.metricGrid}>
             <Card className={styles.metricCard}>
-              <Statistic title="Events" value={summary.data?.eventCount ?? 0} />
-            </Card>
-            <Card className={styles.metricCard}>
-              <Statistic title="Avg doc open" value={formatMs(summary.data?.avgDocOpenDuration)} />
-            </Card>
-            <Card className={styles.metricCard}>
-              <Statistic title="P75 doc open" value={formatMs(summary.data?.p75DocOpenDuration)} />
-            </Card>
-            <Card className={styles.metricCard}>
-              <Statistic title="P95 doc open" value={formatMs(summary.data?.p95DocOpenDuration)} />
-            </Card>
-            <Card className={styles.metricCard}>
-              <Statistic
-                title="Errors"
-                value={summary.data?.errorCount ?? 0}
-                valueStyle={{ color: '#cf1322' }}
-              />
+              <Statistic title="Slow requests" value={summary.data?.slowRequestCount ?? 0} />
             </Card>
           </div>
+
+          <section className={styles.webVitals}>
+            <Typography.Title level={4}>Core Web Vitals (P75)</Typography.Title>
+            <div className={styles.metricGrid}>
+              <Card className={styles.metricCard}>
+                <Statistic title="LCP" value={formatMs(summary.data?.webVitals.lcp)} />
+              </Card>
+              <Card className={styles.metricCard}>
+                <Statistic title="INP" value={formatMs(summary.data?.webVitals.inp)} />
+              </Card>
+              <Card className={styles.metricCard}>
+                <Statistic title="CLS" value={summary.data?.webVitals.cls ?? '-'} precision={3} />
+              </Card>
+              <Card className={styles.metricCard}>
+                <Statistic title="FCP" value={formatMs(summary.data?.webVitals.fcp)} />
+              </Card>
+              <Card className={styles.metricCard}>
+                <Statistic title="TTFB" value={formatMs(summary.data?.webVitals.ttfb)} />
+              </Card>
+            </div>
+          </section>
 
           <div className={styles.grid}>
             <div className={styles.stack}>

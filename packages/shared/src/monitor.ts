@@ -47,6 +47,14 @@ export interface MonitorIngestRequest {
   events: MonitorEventPayload[];
 }
 
+export interface MonitorWebVitals {
+  cls: number | null;
+  fcp: number | null;
+  inp: number | null;
+  lcp: number | null;
+  ttfb: number | null;
+}
+
 export interface MonitorSummary {
   eventCount: number;
   avgDocOpenDuration: number | null;
@@ -54,6 +62,7 @@ export interface MonitorSummary {
   p95DocOpenDuration: number | null;
   errorCount: number;
   slowRequestCount: number;
+  webVitals: MonitorWebVitals;
 }
 
 export interface MonitorTrendPoint {

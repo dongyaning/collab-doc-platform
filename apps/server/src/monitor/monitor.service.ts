@@ -37,6 +37,17 @@ function toDate(value: string | undefined, fallback: Date) {
   return date;
 }
 
+function toLimit(value: number | string | undefined) {
+  if (value === undefined) {
+    return DEFAULT_LIMIT;
+  }
+  const limit = typeof value === 'number' ? value : Number(value);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
+    throw new BadRequestException('invalid limit');
+  }
+  return limit;
+}
+
 function percentile(values: number[], ratio: number) {
   if (values.length === 0) {
     return null;
@@ -101,27 +112,52 @@ export class MonitorService {
 
   async summary(query: MonitorQueryDto): Promise<MonitorSummary> {
     const where = this.buildWhere(query);
-    const [eventCount, errorCount, slowRequestCount, docOpenEvents] = await Promise.all([
-      this.prisma.monitorEvent.count({ where }),
-      this.prisma.monitorEvent.count({ where: { ...where, eventType: 'error' } }),
-      this.prisma.monitorEvent.count({
-        where: { ...where, eventType: 'request', duration: { gte: SLOW_REQUEST_THRESHOLD } },
-      }),
-      this.prisma.monitorEvent.findMany({
-        where: { ...where, eventType: 'business', name: 'doc_open' },
-        select: { duration: true },
-      }),
-    ]);
-    const durations = docOpenEvents.flatMap((event) =>
-      event.duration === null ? [] : [event.duration]
-    );
+    const [eventCount, errorCount, slowRequestCount, docOpenEvents, webVitalEvents] =
+      await Promise.all([
+        this.prisma.monitorEvent.count({ where }),
+        this.prisma.monitorEvent.count({ where: { ...where, eventType: 'error' } }),
+        this.prisma.monitorEvent.count({
+          where: { ...where, eventType: 'request', duration: { gte: SLOW_REQUEST_THRESHOLD } },
+        }),
+        this.prisma.monitorEvent.findMany({
+          where: { ...where, eventType: 'business', name: 'doc_open' },
+          select: { duration: true },
+        }),
+        this.prisma.monitorEvent.findMany({
+          where: {
+            ...where,
+            eventType: 'web_vital',
+            name: { in: ['CLS', 'FCP', 'INP', 'LCP', 'TTFB'] },
+          },
+          select: { name: true, duration: true, value: true },
+        }),
+      ]);
+    const durations = docOpenEvents
+      .map((event) => event.duration)
+      .filter((duration): duration is number => duration !== null);
+    const webVitals = new Map<string, number[]>();
+    for (const event of webVitalEvents) {
+      const metricValue = event.value ?? event.duration;
+      if (metricValue !== null) {
+        const values = webVitals.get(event.name) ?? [];
+        values.push(metricValue);
+        webVitals.set(event.name, values);
+      }
+    }
     return {
-      avgDocOpenDuration: average(durations),
-      errorCount,
       eventCount,
+      errorCount,
+      avgDocOpenDuration: average(durations),
       p75DocOpenDuration: percentile(durations, 0.75),
       p95DocOpenDuration: percentile(durations, 0.95),
       slowRequestCount,
+      webVitals: {
+        cls: percentile(webVitals.get('CLS') ?? [], 0.75),
+        fcp: percentile(webVitals.get('FCP') ?? [], 0.75),
+        inp: percentile(webVitals.get('INP') ?? [], 0.75),
+        lcp: percentile(webVitals.get('LCP') ?? [], 0.75),
+        ttfb: percentile(webVitals.get('TTFB') ?? [], 0.75),
+      },
     };
   }
 
@@ -160,7 +196,7 @@ export class MonitorService {
 
   async slowRequests(query: MonitorQueryDto): Promise<MonitorSlowRequest[]> {
     const where = this.buildWhere(query);
-    const limit = query.limit ?? DEFAULT_LIMIT;
+    const limit = toLimit(query.limit);
     const events = await this.prisma.monitorEvent.findMany({
       orderBy: [{ duration: 'desc' }, { createdAt: 'desc' }],
       take: limit,
@@ -207,14 +243,14 @@ export class MonitorService {
         p95Duration: percentile(value.durations, 0.95),
       }))
       .sort((a, b) => (b.p95Duration ?? 0) - (a.p95Duration ?? 0))
-      .slice(0, query.limit ?? DEFAULT_LIMIT);
+      .slice(0, toLimit(query.limit));
   }
 
   async errors(query: MonitorQueryDto): Promise<MonitorErrorEvent[]> {
     const where = this.buildWhere(query);
     const events = await this.prisma.monitorEvent.findMany({
       orderBy: { createdAt: 'desc' },
-      take: query.limit ?? DEFAULT_LIMIT,
+      take: toLimit(query.limit),
       where: { ...where, eventType: 'error' },
     });
     return events.map((event) => ({

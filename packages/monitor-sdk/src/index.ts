@@ -503,12 +503,11 @@ class MonitorCore {
         this.track('web_vital', 'CLS', { value: layoutEntry.value });
       }
     });
-    this.observePerformance('first-input', (entry) => {
-      const firstInput = entry as PerformanceEntry & { processingStart?: number };
-      const value = firstInput.processingStart
-        ? firstInput.processingStart - entry.startTime
-        : undefined;
-      this.track('web_vital', 'FID', { value: value ? Math.round(value) : undefined });
+    this.observePerformance('event', (entry) => {
+      const interaction = entry as PerformanceEntry & { duration?: number; interactionId?: number };
+      if (interaction.interactionId && interaction.duration !== undefined) {
+        this.track('web_vital', 'INP', { value: Math.round(interaction.duration) });
+      }
     });
   }
 
