@@ -8,5 +8,6 @@ import { CollabModule } from '../collab/collab.module.js';
   imports: [KnowledgeBasesModule, CollabModule],
   controllers: [NodesController],
   providers: [NodesService],
+  exports: [NodesService],
 })
 export class NodesModule {}

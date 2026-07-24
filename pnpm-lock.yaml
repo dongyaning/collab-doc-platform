@@ -238,6 +238,9 @@ importers:
       '@prisma/client':
         specifier: ^5.20.0
         version: 5.22.0(prisma@5.22.0)
+      '@wiseflow/mini-agent':
+        specifier: workspace:*
+        version: link:../../packages/mini-agent
       '@wiseflow/shared':
         specifier: workspace:*
         version: link:../../packages/shared

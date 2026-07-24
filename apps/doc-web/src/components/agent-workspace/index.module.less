@@ -1,0 +1,97 @@
+.workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.contextSection,
+.promptSection,
+.responseSection,
+.proposalSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 24px;
+}
+
+.selectionText,
+.responseText {
+  margin: 0 !important;
+  white-space: pre-wrap;
+}
+
+.selectionText {
+  max-height: 140px;
+  padding: 10px 12px;
+  overflow: auto;
+  border-left: 3px solid #1677ff;
+  background: #f5f7fa;
+  color: #344054;
+}
+
+.responseSection {
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.responseText {
+  color: #1f2937;
+}
+
+.proposalSection {
+  padding: 12px;
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.diffBlock {
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.removedLine,
+.addedLine {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 4px;
+  padding: 7px 9px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.removedLine {
+  background: #fff1f0;
+  color: #8c1d18;
+}
+
+.addedLine {
+  border-top: 1px solid #e5e7eb;
+  background: #f0fff4;
+  color: #176b3a;
+}
+
+.diffMark {
+  font-weight: 700;
+  user-select: none;
+}
+
+.proposalActions {
+  justify-content: flex-end;
+}
+
+.divider {
+  margin: 0 !important;
+}

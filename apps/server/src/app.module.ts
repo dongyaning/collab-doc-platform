@@ -7,6 +7,7 @@ import { KnowledgeBasesModule } from './knowledge-bases/knowledge-bases.module.j
 import { NodesModule } from './nodes/nodes.module.js';
 import { FilesModule } from './files/files.module.js';
 import { MonitorModule } from './monitor/monitor.module.js';
+import { AgentModule } from './agent/agent.module.js';
 import { HealthController } from './health.controller.js';
 
 @Module({
@@ -19,6 +20,7 @@ import { HealthController } from './health.controller.js';
     NodesModule,
     FilesModule,
     MonitorModule,
+    AgentModule,
   ],
   controllers: [HealthController],
 })

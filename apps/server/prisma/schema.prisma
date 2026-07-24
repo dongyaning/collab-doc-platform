@@ -38,7 +38,7 @@ model User {
   updatedAt    DateTime @updatedAt
 
   /// The user's default knowledge base (created on registration).
-  defaultKbId  String?
+  defaultKbId String?
 
   ownedKbs               KnowledgeBase[] @relation("KbOwner")
   nodeMembers            NodeMember[]
@@ -51,19 +51,19 @@ model User {
 // --- Knowledge Base (Wiki / Space) ---
 
 model KnowledgeBase {
-  id          String   @id @default(cuid())
-  title       String   @default("Untitled")
+  id          String  @id @default(cuid())
+  title       String  @default("Untitled")
   description String?
 
-  ownerId     String
-  owner       User     @relation("KbOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerId String
+  owner   User   @relation("KbOwner", fields: [ownerId], references: [id], onDelete: Cascade)
 
   /// Points to the root Node that represents this KB.
-  rootNodeId  String?  @unique
-  rootNode    Node?    @relation("KbRoot", fields: [rootNodeId], references: [id])
+  rootNodeId String? @unique
+  rootNode   Node?   @relation("KbRoot", fields: [rootNodeId], references: [id])
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   nodes          Node[]          @relation("KbNodes")
   accessRequests AccessRequest[]
@@ -86,17 +86,17 @@ model Node {
   sortOrder Int      @default(0)
 
   /// Latest Yjs document state (never null — seeded on creation).
-  yjsState  Bytes
+  yjsState Bytes
   /// Monotonic version, bumped on each persisted snapshot.
-  version   Int      @default(0)
+  version  Int   @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  kb        KnowledgeBase @relation("KbNodes", fields: [kbId], references: [id], onDelete: Cascade)
-  kbAsRoot  KnowledgeBase? @relation("KbRoot")  /// The KB this node is the root of (optional).
-  parent    Node?         @relation("NodeTree", fields: [parentId], references: [id], onDelete: SetNull)
-  children  Node[]        @relation("NodeTree")
+  kb       KnowledgeBase  @relation("KbNodes", fields: [kbId], references: [id], onDelete: Cascade)
+  kbAsRoot KnowledgeBase? @relation("KbRoot") /// The KB this node is the root of (optional).
+  parent   Node?          @relation("NodeTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children Node[]         @relation("NodeTree")
 
   versions       NodeVersion[]
   members        NodeMember[]
@@ -118,7 +118,7 @@ model NodeVersion {
   label       String?
   createdAt   DateTime @default(now())
 
-  node        Node     @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  node Node @relation(fields: [nodeId], references: [id], onDelete: Cascade)
 
   @@unique([nodeId, version])
   @@index([nodeId, createdAt])
@@ -129,13 +129,13 @@ model NodeVersion {
 model NodeMember {
   nodeId          String
   userId          String
-  role            NodeRole   @default(VIEWER)
+  role            NodeRole @default(VIEWER)
   /// Whether this membership also applies to all descendant nodes.
-  includeChildren Boolean    @default(false)
-  createdAt       DateTime   @default(now())
+  includeChildren Boolean  @default(false)
+  createdAt       DateTime @default(now())
 
-  node      Node       @relation(fields: [nodeId], references: [id], onDelete: Cascade)
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  node Node @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([nodeId, userId])
   @@index([userId])
@@ -225,4 +225,79 @@ model MonitorEvent {
   @@index([sessionId])
   @@index([status, createdAt])
   @@index([duration])
+}
+
+// --- Mini Agent Runtime ---
+
+enum AgentRunStatus {
+  QUEUED
+  PREPARING_CONTEXT
+  REASONING
+  AWAITING_TOOL
+  AWAITING_CONFIRMATION
+  APPLYING
+  COMPLETED
+  FAILED
+  CANCELLED
+  BUDGET_EXHAUSTED
+}
+
+enum AgentProposalStatus {
+  PENDING
+  CONFIRMED
+  APPLYING
+  APPLIED
+  REJECTED
+  EXPIRED
+  STALE
+}
+
+model AgentRun {
+  id             String         @id @default(cuid())
+  conversationId String
+  userId         String
+  kbId           String
+  nodeId         String?
+  status         AgentRunStatus @default(QUEUED)
+  message        String
+  modelName      String         @default("mock")
+  budgetJson     Json?
+  /// Accumulated final answer text (streamed tokens concatenated).
+  finalAnswer    String?
+  steps          Int            @default(0)
+  toolCalls      Int            @default(0)
+  error          String?
+  startedAt      DateTime       @default(now())
+  completedAt    DateTime?
+  createdAt      DateTime       @default(now())
+
+  proposals AgentProposal[]
+
+  @@index([conversationId, createdAt])
+  @@index([userId, createdAt])
+  @@index([kbId, createdAt])
+}
+
+model AgentProposal {
+  id            String              @id @default(cuid())
+  runId         String
+  nodeId        String
+  /// Node.version at the time the proposal was generated.
+  baseVersion   Int
+  /// Structured change (JSON: { type, from, to, newText }).
+  patch         Json
+  /// Doc range the patch targets (optional, for stale detection).
+  affectedRange Json?
+  status        AgentProposalStatus @default(PENDING)
+  confirmedBy   String?
+  confirmedAt   DateTime?
+  appliedAt     DateTime?
+  expiresAt     DateTime?
+  createdAt     DateTime            @default(now())
+
+  run AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+  @@index([nodeId, status])
+  @@index([status, expiresAt])
 }

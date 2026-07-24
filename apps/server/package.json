@@ -24,6 +24,7 @@
     "@nestjs/platform-express": "^10.4.4",
     "@nestjs/serve-static": "^4.0.2",
     "@prisma/client": "^5.20.0",
+    "@wiseflow/mini-agent": "workspace:*",
     "@wiseflow/shared": "workspace:*",
     "bcryptjs": "^2.4.3",
     "class-transformer": "^0.5.1",

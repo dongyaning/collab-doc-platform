@@ -102,6 +102,7 @@ export interface NodeDetail {
   type: NodeType;
   title: string;
   sortOrder: number;
+  version: number;
   ownerId: string;
   role?: string;
   createdAt: string;

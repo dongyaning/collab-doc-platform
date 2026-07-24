@@ -20,6 +20,8 @@ import { ResizableImage, ImageNodeView } from '../../extensions/image';
 import { WidgetExtension, WidgetNodeView } from '../../extensions/widget';
 import { registerPresetWidgets } from '../../extensions/widget/presets';
 import { UserAvatar } from '../../components/user-avatar';
+import { AgentWorkspace } from '../../components/agent-workspace';
+import type { AgentSelection } from '../../agent/agent.types';
 import { EditorToolbar } from './editor-toolbar';
 import { RemoteNodeCursors } from './remote-node-cursors';
 import * as Y from 'yjs';
@@ -52,6 +54,7 @@ import {
   FolderOpenOutlined,
   HistoryOutlined,
   MailOutlined,
+  RobotOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   PlusOutlined,
@@ -237,6 +240,8 @@ export function KnowledgeBaseViewPage() {
   const user = useAuthStore((s) => s.user);
 
   const [isEditing, setIsEditing] = useState(false);
+  const [agentSelection, setAgentSelection] = useState<AgentSelection | null>(null);
+  const [agentOpen, setAgentOpen] = useState(false);
   const docOpenSpanRef = useRef<MonitorSpan | null>(null);
   const editorReadyRef = useRef<string | null>(null);
   const contentLoadStartRef = useRef<number | null>(null);
@@ -686,6 +691,28 @@ export function KnowledgeBaseViewPage() {
     editor.commands.setContent(contentQuery.data);
   }, [editor, contentQuery.data, provider, isEditing]);
 
+  const openAgentWorkspace = useCallback(() => {
+    if (!editor || !editable) {
+      modal.warning({ title: 'Enter edit mode before using Agent rewrite.' });
+      return;
+    }
+
+    const { from, to } = editor.state.selection;
+    if (from === to) {
+      modal.warning({ title: 'Select text to rewrite.' });
+      return;
+    }
+
+    const text = editor.state.doc.textBetween(from, to, '\n');
+    if (!text.trim()) {
+      modal.warning({ title: 'Select text to rewrite.' });
+      return;
+    }
+
+    setAgentSelection({ from, to, text });
+    setAgentOpen(true);
+  }, [editable, editor, modal]);
+
   const exitEditMode = useCallback(() => {
     track('business', 'exit_edit_mode', {
       docId: nodeId,
@@ -1024,13 +1051,18 @@ export function KnowledgeBaseViewPage() {
                   )
                 ) : null}
                 {isEditing ? (
-                  <Button
-                    icon={<SaveOutlined />}
-                    onClick={onSaveSnapshot}
-                    loading={snapshotPending}
-                  >
-                    Save version
-                  </Button>
+                  <>
+                    <Button icon={<RobotOutlined />} onClick={openAgentWorkspace}>
+                      AI rewrite
+                    </Button>
+                    <Button
+                      icon={<SaveOutlined />}
+                      onClick={onSaveSnapshot}
+                      loading={snapshotPending}
+                    >
+                      Save version
+                    </Button>
+                  </>
                 ) : null}
                 <Button icon={<HistoryOutlined />} onClick={() => setVersionsOpen(true)}>
                   History
@@ -1086,6 +1118,24 @@ export function KnowledgeBaseViewPage() {
             </div>
           </div>
         )}
+
+        <Drawer
+          title="AI rewrite"
+          open={agentOpen && !!agentSelection && !!editor && !!nodeId && !!kbId}
+          onClose={() => setAgentOpen(false)}
+          size={420}
+          destroyOnClose
+        >
+          {agentSelection && editor && nodeId && kbId ? (
+            <AgentWorkspace
+              kbId={kbId}
+              nodeId={nodeId}
+              nodeVersion={activeDoc.data?.version ?? 0}
+              editor={editor}
+              selection={agentSelection}
+            />
+          ) : null}
+        </Drawer>
 
         {/* Node-level share: shares only this document/folder */}
         <Drawer
