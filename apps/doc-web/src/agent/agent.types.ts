@@ -1,14 +1,18 @@
 export interface AgentSelection {
-  from: number;
-  to: number;
-  text: string;
+  fromRelPos: unknown;
+  toRelPos: unknown;
+  content: string;
+}
+
+export interface AgentEdit {
+  fromRelPos?: unknown;
+  toRelPos?: unknown;
+  baseContent: string;
+  newText: string;
 }
 
 export interface AgentPatch {
-  type: 'replace';
-  from: number;
-  to: number;
-  newText: string;
+  edits: AgentEdit[];
 }
 
 export interface AgentProposal {

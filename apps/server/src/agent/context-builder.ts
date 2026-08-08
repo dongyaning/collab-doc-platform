@@ -7,9 +7,9 @@ export interface ContextInput {
   kbId: string;
   nodeId?: string;
   selection?: {
-    from: number;
-    to: number;
-    text: string;
+    fromRelPos?: unknown;
+    toRelPos?: unknown;
+    content: string;
   };
 }
 

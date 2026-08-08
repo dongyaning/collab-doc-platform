@@ -8,6 +8,11 @@ import { AgentService } from '../agent.service.js';
  * saves a structured proposal to the AgentProposal table. The user
  * must review the diff preview in the UI and explicitly confirm
  * before the patch is applied.
+ *
+ * The edit is described by content anchors (baseContent + newText):
+ * the Agent side has no Y.Doc and cannot generate Yjs relative
+ * positions, so the frontend resolves the baseContent to a position
+ * at apply time (unique match required).
  */
 export function createProposeDocumentPatchTool(
   agentService: AgentService
@@ -17,15 +22,17 @@ export function createProposeDocumentPatchTool(
     description:
       'Propose a replacement for a range of text in the current document. ' +
       'The proposal will be shown to the user as a diff, and they must confirm before it is applied. ' +
-      'Use "from" and "to" TipTap document positions to specify the range, and "newText" for the replacement.',
+      'Use "baseContent" (the exact original text to replace) and "newText" (the replacement).',
     inputSchema: {
       type: 'object',
       properties: {
-        from: { type: 'number', description: 'Starting TipTap document position' },
-        to: { type: 'number', description: 'Ending TipTap document position' },
+        baseContent: {
+          type: 'string',
+          description: 'The exact original text to replace (must match the document byte-for-byte)',
+        },
         newText: { type: 'string', description: 'The replacement text' },
       },
-      required: ['from', 'to', 'newText'],
+      required: ['baseContent', 'newText'],
     },
     riskLevel: 'write_proposal',
 
@@ -37,47 +44,37 @@ export function createProposeDocumentPatchTool(
         throw new Error('No document context available for patch proposal');
       }
 
-      const patch = {
-        type: 'replace',
-        from: input.from,
-        to: input.to,
-        newText: input.newText,
-      };
-
-      const affectedRange = {
-        from: input.from,
-        to: input.to,
-      };
+      const edits = [
+        {
+          baseContent: input.baseContent,
+          newText: input.newText,
+        },
+      ];
 
       const proposal = await agentService.createProposal({
         runId: ctx.runId,
         nodeId: ctx.documentId,
         baseVersion: ctx.documentVersion ?? 0,
-        patch,
-        affectedRange,
+        patch: { edits },
       });
 
       return {
         proposalId: proposal.id,
-        type: 'replace',
-        from: input.from,
-        to: input.to,
-        newText: input.newText,
+        edits,
       };
     },
   };
 }
 
 interface ProposePatchInput {
-  from: number;
-  to: number;
+  baseContent: string;
   newText: string;
 }
 
 interface ProposePatchResult {
   proposalId: string;
-  type: string;
-  from: number;
-  to: number;
-  newText: string;
+  edits: Array<{
+    baseContent: string;
+    newText: string;
+  }>;
 }

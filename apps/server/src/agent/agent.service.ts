@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.module.js';
 import type { AgentRunStatus } from '@prisma/client';
 
@@ -30,7 +30,7 @@ export interface UpdateRunInput {
 
 @Injectable()
 export class AgentService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async createRun(input: CreateRunInput) {
     return this.prisma.agentRun.create({
@@ -69,59 +69,70 @@ export class AgentService {
     });
   }
 
+  /**
+   * Confirm a proposal with an atomic status transition.
+   *
+   * Only PENDING proposals that have not expired can be confirmed.
+   * Node.version is no longer the primary conflict check; it is kept
+   * for audit only (the frontend performs write-time content validation).
+   */
   async confirmProposal(proposalId: string, userId: string) {
-    const proposal = await this.prisma.agentProposal.findUnique({
-      where: { id: proposalId },
-    });
-    if (!proposal) {
-      throw new NotFoundException('Agent proposal not found');
-    }
-
-    const node = await this.prisma.node.findUnique({
-      where: { id: proposal.nodeId },
-      select: { version: true },
-    });
-    if (!node || node.version !== proposal.baseVersion) {
-      await this.markProposalStale(proposalId);
-      throw new ConflictException('The document changed. Generate a new proposal.');
-    }
-
-    return this.prisma.agentProposal.update({
-      where: { id: proposalId },
+    const result = await this.prisma.agentProposal.updateMany({
+      where: { id: proposalId, status: 'PENDING', expiresAt: { gt: new Date() } },
       data: {
         status: 'APPLYING',
         confirmedBy: userId,
         confirmedAt: new Date(),
       },
     });
+
+    if (result.count === 0) {
+      const existing = await this.getProposal(proposalId);
+      if (!existing) {
+        throw new NotFoundException('Agent proposal not found');
+      }
+      if (existing.status === 'EXPIRED') {
+        throw new ConflictException('The proposal has expired. Generate a new proposal.');
+      }
+      throw new ConflictException('The proposal is not pending or has already been confirmed.');
+    }
+
+    const updated = await this.getProposal(proposalId);
+    return updated!;
   }
 
+  /** Mark APPLYING proposal as APPLIED (idempotent). */
   async markProposalApplied(proposalId: string) {
-    return this.prisma.agentProposal.update({
-      where: { id: proposalId },
+    await this.prisma.agentProposal.updateMany({
+      where: { id: proposalId, status: 'APPLYING' },
       data: {
         status: 'APPLIED',
         appliedAt: new Date(),
       },
     });
+    return (await this.getProposal(proposalId))!;
   }
 
+  /** Mark PENDING/APPLYING proposal as STALE (idempotent). */
   async markProposalStale(proposalId: string) {
-    return this.prisma.agentProposal.update({
-      where: { id: proposalId },
+    await this.prisma.agentProposal.updateMany({
+      where: { id: proposalId, status: { in: ['PENDING', 'APPLYING'] } },
       data: {
         status: 'STALE',
       },
     });
+    return (await this.getProposal(proposalId))!;
   }
 
+  /** Reject PENDING/APPLYING proposal (idempotent). */
   async rejectProposal(proposalId: string) {
-    return this.prisma.agentProposal.update({
-      where: { id: proposalId },
+    await this.prisma.agentProposal.updateMany({
+      where: { id: proposalId, status: { in: ['PENDING', 'APPLYING'] } },
       data: {
         status: 'REJECTED',
       },
     });
+    return (await this.getProposal(proposalId))!;
   }
 
   async getRun(runId: string) {

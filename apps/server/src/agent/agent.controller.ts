@@ -1,4 +1,14 @@
-import { Body, Controller, Inject, Param, Post, Req, Res, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Inject,
+  NotFoundException,
+  Param,
+  Post,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { IsInt, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 import { type Request, type Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
@@ -25,9 +35,9 @@ class CreateRunDto {
   @IsOptional()
   @IsObject()
   selection?: {
-    from: number;
-    to: number;
-    text: string;
+    fromRelPos: unknown;
+    toRelPos: unknown;
+    content: string;
   };
 }
 
@@ -167,7 +177,7 @@ export class AgentController {
   async cancelRun(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     const run = await this.agentService.getRun(id);
     if (!run || run.userId !== user.id) {
-      throw new Error('Agent run not found');
+      throw new NotFoundException('Agent run not found');
     }
 
     await this.agentService.updateRun(id, {
@@ -179,7 +189,7 @@ export class AgentController {
 
   private assertProposalOwner(ownerId: string | undefined, userId: string) {
     if (!ownerId || ownerId !== userId) {
-      throw new Error('Agent proposal not found');
+      throw new NotFoundException('Agent proposal not found');
     }
   }
 }

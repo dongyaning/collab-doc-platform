@@ -3,7 +3,8 @@ import type { Editor } from '@tiptap/react';
 import { Alert, App as AntdApp, Button, Divider, Input, Space, Spin, Tag, Typography } from 'antd';
 import { CheckOutlined, CloseOutlined, SendOutlined, StopOutlined } from '@ant-design/icons';
 import { agentApi } from '../../agent/agent.api';
-import { applyAgentProposal, StaleAgentProposalError } from '../../agent/proposal-applier';
+import { applyAgentProposal } from '../../agent/proposal-applier';
+import type { ApplyResult } from '../../agent/proposal-applier';
 import type { AgentEvent, AgentProposal, AgentSelection } from '../../agent/agent.types';
 import styles from './index.module.less';
 
@@ -27,7 +28,7 @@ export function AgentWorkspace({
   editor,
   selection,
 }: AgentWorkspaceProps) {
-  const { message: messageApi } = AntdApp.useApp();
+  const { message: messageApi, modal: modalApi } = AntdApp.useApp();
   const [instruction, setInstruction] = useState('帮我把这段话改得更专业');
   const [streamedText, setStreamedText] = useState('');
   const [finalAnswer, setFinalAnswer] = useState('');
@@ -105,6 +106,82 @@ export function AgentWorkspace({
     }
   };
 
+  const applyProposal = async (result: ApplyResult, force: boolean): Promise<boolean> => {
+    if (result.status === 'applied') {
+      await agentApi.acknowledgeApplied(proposal!.proposalId);
+      setRunState('completed');
+      messageApi.success('Agent edit applied');
+      return true;
+    }
+
+    const canForce =
+      result.failures.length > 0 &&
+      result.failures.every((failure) => failure.reason === 'modified');
+
+    if (force && result.status === 'conflict') {
+      const forced = applyAgentProposal(editor, proposal!, true);
+      if (forced.status === 'applied') {
+        await agentApi.acknowledgeApplied(proposal!.proposalId);
+        setRunState('completed');
+        messageApi.success('Agent edit applied');
+        return true;
+      }
+      setError('The edit could not be applied. Generate a new proposal.');
+      setRunState('awaiting_confirmation');
+      return false;
+    }
+
+    return new Promise<boolean>((resolve) => {
+      modalApi.confirm({
+        title: 'The selected content has been modified by someone else',
+        content: (
+          <div>
+            <Paragraph className={styles.conflictLine}>
+              <Text strong>Modified content:</Text>
+              <br />
+              {result.failures
+                .slice(0, 3)
+                .map((failure) => failure.edit.baseContent)
+                .filter(Boolean)
+                .join(', ') || 'No longer exists'}
+            </Paragraph>
+            <Paragraph className={styles.conflictLine}>
+              <Text strong>Agent suggestion:</Text>
+              <br />
+              {result.failures[0]?.edit.newText ?? ''}
+            </Paragraph>
+          </div>
+        ),
+        okText: canForce ? 'Still apply' : 'OK',
+        cancelText: canForce ? 'Regenerate' : 'Close',
+        onOk: async () => {
+          if (canForce) {
+            const forced = applyAgentProposal(editor, proposal!, true);
+            if (forced.status === 'applied') {
+              await agentApi.acknowledgeApplied(proposal!.proposalId);
+              setRunState('completed');
+              messageApi.success('Agent edit applied');
+              resolve(true);
+              return;
+            }
+            await agentApi.markProposalStale(proposal!.proposalId).catch(() => undefined);
+            setProposal(null);
+            setRunState('idle');
+            messageApi.info('Generate a new proposal.');
+          }
+          resolve(false);
+        },
+        onCancel: async () => {
+          await agentApi.rejectProposal(proposal!.proposalId).catch(() => undefined);
+          setProposal(null);
+          setRunState('completed');
+          messageApi.info('Agent edit rejected');
+          resolve(false);
+        },
+      });
+    });
+  };
+
   const confirmProposal = async () => {
     if (!proposal) {
       return;
@@ -114,19 +191,13 @@ export function AgentWorkspace({
     setError('');
     try {
       await agentApi.confirmProposal(proposal.proposalId);
-      applyAgentProposal(editor, proposal, selection, nodeVersion);
-      await agentApi.acknowledgeApplied(proposal.proposalId);
-      setRunState('completed');
-      messageApi.success('Agent edit applied');
+      const result = applyAgentProposal(editor, proposal);
+      await applyProposal(result, false);
     } catch (applyError) {
-      const isStale = applyError instanceof StaleAgentProposalError;
-      if (isStale) {
-        await agentApi.markProposalStale(proposal.proposalId).catch(() => undefined);
-      }
       const message =
         applyError instanceof Error ? applyError.message : 'Agent edit could not be applied';
       setError(message);
-      setRunState(isStale ? 'error' : 'awaiting_confirmation');
+      setRunState('awaiting_confirmation');
     }
   };
 
@@ -145,9 +216,8 @@ export function AgentWorkspace({
       <section className={styles.contextSection}>
         <div className={styles.sectionHeader}>
           <Text strong>Selection</Text>
-          <Tag color="blue">{selection.to - selection.from} positions</Tag>
         </div>
-        <Paragraph className={styles.selectionText}>{selection.text}</Paragraph>
+        <Paragraph className={styles.selectionText}>{selection.content}</Paragraph>
       </section>
 
       <Divider className={styles.divider} />
@@ -190,14 +260,18 @@ export function AgentWorkspace({
             </Tag>
           </div>
           <div className={styles.diffBlock}>
-            <div className={styles.removedLine}>
-              <span className={styles.diffMark}>−</span>
-              <span>{selection.text}</span>
-            </div>
-            <div className={styles.addedLine}>
-              <span className={styles.diffMark}>+</span>
-              <span>{proposal.patch.newText}</span>
-            </div>
+            {proposal.patch.edits.map((edit, index) => (
+              <div key={index} className={styles.diffEdit}>
+                <div className={styles.removedLine}>
+                  <span className={styles.diffMark}>−</span>
+                  <span>{edit.baseContent}</span>
+                </div>
+                <div className={styles.addedLine}>
+                  <span className={styles.diffMark}>+</span>
+                  <span>{edit.newText}</span>
+                </div>
+              </div>
+            ))}
           </div>
           {runState !== 'completed' ? (
             <Space className={styles.proposalActions}>

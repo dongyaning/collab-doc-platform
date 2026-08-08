@@ -26,6 +26,7 @@ import { EditorToolbar } from './editor-toolbar';
 import { RemoteNodeCursors } from './remote-node-cursors';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
+import { absolutePositionToRelativePosition, ySyncPluginKey } from 'y-prosemirror';
 import {
   App as AntdApp,
   Avatar,
@@ -709,7 +710,21 @@ export function KnowledgeBaseViewPage() {
       return;
     }
 
-    setAgentSelection({ from, to, text });
+    const ystate = ySyncPluginKey.getState(editor.state);
+    if (!ystate?.type || !ystate?.binding?.mapping) {
+      modal.warning({ title: 'Collaboration is not ready yet. Try again.' });
+      return;
+    }
+
+    setAgentSelection({
+      fromRelPos: Y.relativePositionToJSON(
+        absolutePositionToRelativePosition(from, ystate.type, ystate.binding.mapping)
+      ),
+      toRelPos: Y.relativePositionToJSON(
+        absolutePositionToRelativePosition(to, ystate.type, ystate.binding.mapping)
+      ),
+      content: text,
+    });
     setAgentOpen(true);
   }, [editable, editor, modal]);
 

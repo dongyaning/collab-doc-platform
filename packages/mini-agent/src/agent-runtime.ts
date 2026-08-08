@@ -223,11 +223,7 @@ export class AgentRuntime {
       parts.push('', `Document content:\n\`\`\`\n${ctx.documentContent}\n\`\`\``);
     }
     if (ctx.selection) {
-      parts.push(
-        '',
-        `User selected text (from character ${ctx.selection.from} to ${ctx.selection.to}):`,
-        `"${ctx.selection.text}"`
-      );
+      parts.push('', `User selected text:`, `"${ctx.selection.content}"`);
     }
 
     return parts.join('\n');

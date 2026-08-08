@@ -32,16 +32,16 @@ export interface ExecuteRunInput {
   nodeBaseVersion?: number;
   message: string;
   selection?: {
-    from: number;
-    to: number;
-    text: string;
+    fromRelPos?: unknown;
+    toRelPos?: unknown;
+    content: string;
   };
 }
 
 @Injectable()
 export class AgentOrchestrator {
   constructor(
-    private readonly agentService: AgentService,
+    @Inject(AgentService) private readonly agentService: AgentService,
     @Inject(ContextBuilder) private readonly contextBuilder: ContextBuilder
   ) {}
 
@@ -56,6 +56,8 @@ export class AgentOrchestrator {
       modelName: 'mock',
     });
 
+    yield { type: 'run_started', runId: run.id };
+
     // 2. Build context
     yield { type: 'preparing_context', runId: run.id };
 
@@ -68,12 +70,6 @@ export class AgentOrchestrator {
         selection: input.selection,
       });
 
-      if (
-        input.nodeBaseVersion !== undefined &&
-        input.nodeBaseVersion !== context.documentVersion
-      ) {
-        throw new Error('Document version changed before the Agent run started');
-      }
       if (context.effectiveRole !== 'OWNER' && context.effectiveRole !== 'EDITOR') {
         throw new Error('Editor permission is required to modify document content');
       }
@@ -122,7 +118,7 @@ export class AgentOrchestrator {
 
     try {
       for await (const event of runtime.run(runRequest)) {
-        if (event.type !== 'run_completed') {
+        if (event.type !== 'run_started' && event.type !== 'run_completed') {
           yield event;
         }
 
@@ -152,7 +148,6 @@ export class AgentOrchestrator {
     const updatedRun = await this.agentService.getRun(run.id);
     if (updatedRun && updatedRun.proposals.length > 0) {
       const proposal = updatedRun.proposals[updatedRun.proposals.length - 1];
-      const patch = proposal.patch as Record<string, unknown>;
 
       await this.agentService.updateRun(run.id, {
         status: 'AWAITING_CONFIRMATION',
@@ -165,12 +160,7 @@ export class AgentOrchestrator {
         type: 'proposal_ready',
         runId: run.id,
         proposalId: proposal.id,
-        patch: {
-          type: patch.type,
-          from: patch.from,
-          to: patch.to,
-          newText: patch.newText,
-        },
+        patch: proposal.patch as unknown,
         nodeId: proposal.nodeId,
         baseVersion: proposal.baseVersion,
       };

@@ -12,17 +12,17 @@ import type { ModelEvent, ModelProvider, ModelRequest, ToolSchema } from './type
 export class MockModelProvider implements ModelProvider {
   async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
     const userText = this.getUserText(request);
-    const hasSelection =
-      userText.includes('选') ||
-      userText.includes('选区') ||
+    const hasSelectionContext = userText.includes('User selected text:');
+    const hasRewriteIntent =
       userText.includes('改写') ||
       userText.includes('润色') ||
-      userText.includes('修改');
+      userText.includes('修改') ||
+      userText.includes('改得');
     const hasProposeTool = request.tools.some(
       (t: ToolSchema) => t.name === 'propose_document_patch'
     );
 
-    if (hasSelection && hasProposeTool) {
+    if ((hasSelectionContext || hasRewriteIntent) && hasProposeTool) {
       // Simulate the model proposing a patch
       yield { type: 'token', text: '好的' };
       yield { type: 'token', text: '，' };
@@ -36,8 +36,7 @@ export class MockModelProvider implements ModelProvider {
       yield { type: 'token', text: '文字' };
       yield { type: 'token', text: '。' };
 
-      // extract from/to from the user message if available
-      const range = this.extractSelectionRange(userText);
+      const baseContent = this.extractSelectionContent(userText);
       const toolCallId = 'mock_tc_1';
 
       yield {
@@ -45,8 +44,7 @@ export class MockModelProvider implements ModelProvider {
         toolName: 'propose_document_patch',
         toolCallId,
         args: {
-          from: range.from,
-          to: range.to,
+          baseContent,
           newText: '这段内容已被 Agent 改写为更专业的表述。',
         },
       };
@@ -58,10 +56,12 @@ export class MockModelProvider implements ModelProvider {
         toolName: 'propose_document_patch',
         result: {
           patch: {
-            type: 'replace',
-            from: range.from,
-            to: range.to,
-            newText: '这段内容已被 Agent 改写为更专业的表述。',
+            edits: [
+              {
+                baseContent,
+                newText: '这段内容已被 Agent 改写为更专业的表述。',
+              },
+            ],
           },
         },
       };
@@ -96,12 +96,15 @@ export class MockModelProvider implements ModelProvider {
     return '';
   }
 
-  private extractSelectionRange(text: string): { from: number; to: number } {
-    // Try to parse "from X to Y" or "character X to Y" from the user message
-    const match = text.match(/character\s+(\d+)\s+to\s+(\d+)/i);
-    if (match) {
-      return { from: parseInt(match[1], 10), to: parseInt(match[2], 10) };
-    }
-    return { from: 0, to: 10 }; // fallback
+  private extractSelectionContent(text: string): string {
+    // Parse the selected text from the user message, anchored after the
+    // "User selected text:" line so document JSON quotes are not matched:
+    //   User selected text:
+    //   "<selected content>"
+    const marker = 'User selected text:';
+    const markerIndex = text.lastIndexOf(marker);
+    const fromIndex = markerIndex === -1 ? 0 : markerIndex + marker.length;
+    const match = text.slice(fromIndex).match(/"([^"]*)"/);
+    return match?.[1] ?? 'selected text';
   }
 }

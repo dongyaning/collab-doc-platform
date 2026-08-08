@@ -109,9 +109,9 @@ export interface RunContext {
   documentTitle?: string;
   documentContent?: string;
   selection?: {
-    from: number;
-    to: number;
-    text: string;
+    fromRelPos?: unknown;
+    toRelPos?: unknown;
+    content: string;
   };
   extraContext?: Record<string, unknown>;
 }
