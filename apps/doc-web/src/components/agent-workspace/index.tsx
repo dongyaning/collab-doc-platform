@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import type { Editor } from '@tiptap/react';
 import { Alert, App as AntdApp, Button, Empty, Input, Space, Spin, Tag, Typography } from 'antd';
 import {
@@ -484,14 +485,16 @@ export function AgentWorkspace({
             <>
               <Alert type="error" title={message.error ?? 'Agent run failed'} showIcon />
               {message.content ? (
-                <Paragraph className={styles.bubbleText}>{message.content}</Paragraph>
+                <div className={styles.markdown}>
+                  <ReactMarkdown>{message.content}</ReactMarkdown>
+                </div>
               ) : null}
             </>
           ) : (
-            <Paragraph className={styles.bubbleText}>
-              {message.content}
+            <div className={styles.markdown}>
+              <ReactMarkdown>{message.content}</ReactMarkdown>
               {message.status === 'streaming' ? <span className={styles.cursor} /> : null}
-            </Paragraph>
+            </div>
           )}
           {renderProposal(message)}
         </div>

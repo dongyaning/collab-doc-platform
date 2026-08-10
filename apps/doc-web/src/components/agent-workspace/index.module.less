@@ -122,6 +122,138 @@
   word-break: break-word;
 }
 
+.markdown {
+  margin: 0 !important;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #1f2937;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.markdown :global(p) {
+  margin: 0 0 8px;
+}
+
+.markdown :global(p:last-child) {
+  margin-bottom: 0;
+}
+
+.markdown :global(h1),
+.markdown :global(h2),
+.markdown :global(h3),
+.markdown :global(h4),
+.markdown :global(h5),
+.markdown :global(h6) {
+  margin: 12px 0 6px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.markdown :global(h1) {
+  font-size: 20px;
+}
+
+.markdown :global(h2) {
+  font-size: 18px;
+}
+
+.markdown :global(h3) {
+  font-size: 16px;
+}
+
+.markdown :global(h4) {
+  font-size: 15px;
+}
+
+.markdown :global(h5),
+.markdown :global(h6) {
+  font-size: 14px;
+}
+
+.markdown :global(ul),
+.markdown :global(ol) {
+  margin: 0 0 8px;
+  padding-left: 22px;
+}
+
+.markdown :global(ul:last-child),
+.markdown :global(ol:last-child) {
+  margin-bottom: 0;
+}
+
+.markdown :global(li) {
+  margin: 2px 0;
+}
+
+.markdown :global(pre) {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #f6f8fa;
+  overflow-x: auto;
+}
+
+.markdown :global(pre:last-child) {
+  margin-bottom: 0;
+}
+
+.markdown :global(code) {
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: #f6f8fa;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12.5px;
+}
+
+.markdown :global(pre code) {
+  display: block;
+  padding: 0;
+  background: transparent;
+  white-space: pre;
+}
+
+.markdown :global(a) {
+  color: #1677ff;
+}
+
+.markdown :global(blockquote) {
+  margin: 8px 0;
+  padding: 2px 12px;
+  border-left: 3px solid #e5e7eb;
+  color: #6b7280;
+}
+
+.markdown :global(img) {
+  max-width: 100%;
+  border-radius: 6px;
+}
+
+.markdown :global(hr) {
+  margin: 12px 0;
+  border: 0;
+  border-top: 1px solid #e5e7eb;
+}
+
+.markdown :global(table) {
+  margin: 8px 0;
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+
+.markdown :global(th),
+.markdown :global(td) {
+  padding: 6px 10px;
+  border: 1px solid #e5e7eb;
+  text-align: left;
+}
+
+.markdown :global(th) {
+  background: #f6f8fa;
+  font-weight: 600;
+}
+
 .selectionHint {
   display: block;
   margin-top: 6px;
