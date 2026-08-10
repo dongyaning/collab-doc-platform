@@ -64,25 +64,31 @@ export function ReviewViewer({
   const baseEditor = useEditor(
     {
       editable: false,
-      content: baseJson ?? undefined,
       extensions: reviewExtensions,
     },
-    [baseJson]
+    []
   );
 
   const previewEditor = useEditor(
     {
       editable: false,
-      content: baseJson ?? undefined,
       extensions: reviewExtensions,
     },
-    [baseJson]
+    []
   );
 
   const previewEditorRef = useRef<Editor | null>(null);
   previewEditorRef.current = previewEditor ?? null;
 
-  // 变更集变化时重新生成 Preview（增量更新：全量重建，位置信息来自最新 apply）
+  // 编辑器就绪 + baseJson 就绪后，统一设置内容（消除 useEditor content 异步时序竞态）
+  useEffect(() => {
+    if (!baseEditor || !baseJson) {
+      return;
+    }
+    baseEditor.commands.setContent(baseJson);
+  }, [baseEditor, baseJson]);
+
+  // 变更集变化时重新生成 Preview（全量重建）
   useEffect(() => {
     if (!previewEditor || !baseJson) {
       return;
