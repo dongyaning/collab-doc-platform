@@ -119,7 +119,7 @@ export class AgentService {
         patch: input.patch as object,
         affectedRange: input.affectedRange as object | undefined,
         status: 'PENDING',
-        expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 min
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
       },
     });
   }

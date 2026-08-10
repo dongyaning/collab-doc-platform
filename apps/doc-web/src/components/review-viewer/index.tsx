@@ -6,6 +6,7 @@ import type { JSONContent } from '@tiptap/core';
 import { applyEditsToPreview, extractEditText } from '../../agent/review/apply-edits';
 import {
   applyChangeSetToEditor,
+  validateChangeSet,
   type ChangeSetItem,
   type ChangeSetResult,
 } from '../../agent/review/apply-change-set';
@@ -120,12 +121,26 @@ export function ReviewViewer({
     setApplying(true);
     setError('');
     try {
-      // 先服务端确认（CAS），失败（过期/非 PENDING）抛错中止
+      const extractTextFn = (editId: string) => extractEditText(previewEditor, editId);
+
+      // 预检锚点：全部通过后才走 CAS，避免 CAS 成功后应用失败导致 proposal
+      // 卡在 APPLYING 状态，后续确认永久 409
+      const preCheck = validateChangeSet(editor, changeSet, extractTextFn);
+      if (preCheck.length > 0) {
+        const reasons = preCheck.map((f) => f.reason);
+        const details = preCheck
+          .slice(0, 3)
+          .map((f) => (f.edit.kind === 'widget' ? f.edit.insertAfter : f.edit.baseContent))
+          .filter(Boolean)
+          .join(', ');
+        setError(`锚点校验失败（${reasons.join(', ')}）：${details || '目标内容已不存在'}`);
+        return;
+      }
+
+      // 预检通过，执行 CAS
       await confirmProposals(changeSet.map((item) => item.proposalId));
 
-      const result: ChangeSetResult = applyChangeSetToEditor(editor, changeSet, (editId) =>
-        extractEditText(previewEditor, editId)
-      );
+      const result: ChangeSetResult = applyChangeSetToEditor(editor, changeSet, extractTextFn);
       if (result.status === 'applied') {
         onConfirmed(changeSet.map((item) => item.proposalId));
         closeReview();

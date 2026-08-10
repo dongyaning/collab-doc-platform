@@ -76,3 +76,39 @@ export function applyChangeSetToEditor(
   chain.run();
   return { status: 'applied' };
 }
+
+/**
+ * 仅校验变更集锚点（不修改文档）。
+ * 用于在服务端 confirm（CAS）之前做预检，避免 CAS 成功后应用失败导致 proposal
+ * 卡在 APPLYING 状态，后续确认永久 409。
+ */
+export function validateChangeSet(
+  editor: Editor,
+  changeSet: ChangeSetItem[],
+  extractText: (editId: string) => string | null
+): ConflictEdit[] {
+  const failures: ConflictEdit[] = [];
+  for (const item of changeSet) {
+    for (const edit of item.edits) {
+      if (edit.kind === 'widget') {
+        const anchor = findUniqueTextRange(editor, edit.insertAfter);
+        if (!anchor) {
+          failures.push({ edit, reason: 'not_found' });
+        }
+        continue;
+      }
+      const range = findUniqueTextRange(editor, edit.baseContent);
+      if (!range) {
+        failures.push({ edit, reason: 'not_found' });
+        continue;
+      }
+      const current = editor.state.doc.textBetween(range.from, range.to, '\n');
+      if (current !== edit.baseContent) {
+        failures.push({ edit, reason: 'modified' });
+        continue;
+      }
+      extractText(edit.editId);
+    }
+  }
+  return failures;
+}
