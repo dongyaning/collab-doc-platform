@@ -68,7 +68,11 @@ export function createProposeWidgetTool(
           jsCodeGzip = compiled.jsCodeGzip;
         } catch (err) {
           const detail = compileErrorOf(err);
-          throw new Error(`Widget source code failed to compile:\n${detail.message}`);
+          throw new Error(
+            `Widget source code failed to compile:\n${detail.message}\n\n` +
+              'Please fix the TSX syntax and retry. Keep the component simple ' +
+              '(under ~40 lines) and avoid complex SVG or inline styles with many properties.'
+          );
         }
         if (!title) {
           throw new Error('title is required when generating a new widget');
