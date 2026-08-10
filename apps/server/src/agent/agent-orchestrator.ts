@@ -268,9 +268,14 @@ export class AgentOrchestrator {
 
     return (
       '当用户要求插入自定义组件时，使用 propose_widget 工具。生成新组件必须符合规范：\n' +
-      '- 单文件 TSX，默认导出组件，仅使用 React 内置 API，禁止 import 第三方库\n' +
-      '- 组件接收 { props, updateProps, mode, editable }，状态必须通过 props.updateProps 回写\n' +
-      '- props 必须 JSON 可序列化：string / number / boolean / null / array / object，禁止函数、Date、循环引用\n' +
+      '- 单文件 TSX，默认导出组件\n' +
+      '- 可以使用 JSX 语法，也可以 import react（如 import { useState } from "react"），' +
+      'React 由编译期自动打包，不属于第三方库\n' +
+      '- 禁止 import 除 react / react-dom 之外的任何第三方库\n' +
+      '- 组件接收 { props, updateProps, mode, editable }，跨端协同的状态必须通过 ' +
+      'props.updateProps 回写（props 是 JSON，函数、Date 等不可序列化）；组件内部 useState ' +
+      '仅作本地 UI 状态，不会同步到协作者\n' +
+      '- props 必须 JSON 可序列化：string / number / boolean / null / array / object\n' +
       '- 组件应自适应容器宽度，禁止外部网络请求与弹窗\n' +
       '- 生成的新组件必须经用户确认后才会生效' +
       catalogText

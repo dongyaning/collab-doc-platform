@@ -72,6 +72,9 @@ export async function compileWidget(sourceCode: string): Promise<CompileWidgetRe
       build.onLoad({ filter: /.*/, namespace: 'agent-widget' }, () => ({
         contents: sourceCode,
         loader: 'tsx',
+        // 关键：虚拟模块需要 resolveDir，否则其内部 import（如 JSX 生成的
+        // react/jsx-runtime）无法从 node_modules 解析
+        resolveDir: SERVER_ROOT,
       }));
     },
   };
