@@ -157,7 +157,7 @@ export class AgentOrchestrator {
       context,
       tools,
       budget: {
-        maxSteps: 3,
+        maxSteps: 5,
       },
       history,
       systemPromptAppend: await this.buildSystemPromptAppend(input.kbId),
@@ -277,7 +277,9 @@ export class AgentOrchestrator {
       '仅作本地 UI 状态，不会同步到协作者\n' +
       '- props 必须 JSON 可序列化：string / number / boolean / null / array / object\n' +
       '- 组件应自适应容器宽度，禁止外部网络请求与弹窗\n' +
-      '- 生成的新组件必须经用户确认后才会生效' +
+      '- 生成的新组件必须经用户确认后才会生效\n' +
+      '- 本轮有 5 次工具调用机会，请合理规划：编译失败时依据错误信息修正后重试，' +
+      '任务完成或确认无法完成时直接给出最终回答，不要无意义反复重试' +
       catalogText
     );
   }
