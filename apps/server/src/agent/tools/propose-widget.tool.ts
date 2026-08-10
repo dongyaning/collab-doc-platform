@@ -68,10 +68,11 @@ export function createProposeWidgetTool(
           jsCodeGzip = compiled.jsCodeGzip;
         } catch (err) {
           const detail = compileErrorOf(err);
+          const lineHint = buildCodeSnippet(sourceCode, detail.message);
           throw new Error(
-            `Widget source code failed to compile:\n${detail.message}\n\n` +
-              'Please fix the TSX syntax and retry. Keep the component simple ' +
-              '(under ~40 lines) and avoid complex SVG or inline styles with many properties.'
+            `Widget source code failed to compile:\n${detail.message}${lineHint}\n\n` +
+              'Fix the TSX syntax and retry. Keep component under 40 lines, ' +
+              'use simple JSX + inline styles.'
           );
         }
         if (!title) {
@@ -138,4 +139,25 @@ interface ProposeWidgetResult {
   widgetType: string;
   title: string;
   mode: 'generated' | 'reused';
+}
+
+/** 从 esbuild 错误消息中提取行号，附加源码对应行作为修正上下文。 */
+function buildCodeSnippet(sourceCode: string, errorMsg: string): string {
+  const match = errorMsg.match(/agent-widget\.tsx:(\d+)/);
+  if (!match) {
+    return '';
+  }
+  const errLine = Number.parseInt(match[1], 10);
+  const lines = sourceCode.split('\n');
+  if (errLine < 1 || errLine > lines.length) {
+    return '';
+  }
+  const start = Math.max(0, errLine - 3);
+  const end = Math.min(lines.length, errLine + 2);
+  let snippet = `\n出错位置（第 ${errLine} 行附近）：\n`;
+  for (let i = start; i < end; i++) {
+    const marker = i + 1 === errLine ? ' >>> ' : '     ';
+    snippet += `${marker}${i + 1}: ${lines[i]}\n`;
+  }
+  return snippet;
 }

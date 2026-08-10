@@ -269,6 +269,7 @@ export class AgentOrchestrator {
     return (
       '当用户要求插入自定义组件时，使用 propose_widget 工具。生成新组件必须符合规范：\n' +
       '- 单文件 TSX，默认导出组件\n' +
+      '- 组件代码不得超过 40 行，优先使用简单的 JSX + inline style，避免复杂动画、SVG 路径\n' +
       '- 可以使用 JSX 语法，也可以 import react（如 import { useState } from "react"），' +
       'React 由编译期自动打包，不属于第三方库\n' +
       '- 禁止 import 除 react / react-dom 之外的任何第三方库\n' +
