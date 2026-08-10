@@ -6,7 +6,6 @@ import {
   Empty,
   Input,
   Layout,
-  List,
   Modal,
   Popconfirm,
   Spin,
@@ -87,23 +86,13 @@ export function KnowledgeBaseListPage() {
       key: 'kb',
       label: 'Knowledge Bases',
       children: (
-        <KbSection
-          title=""
-          kbs={sharedKbs}
-          empty="No knowledge bases shared with you."
-          showOwner
-        />
+        <KbSection title="" kbs={sharedKbs} empty="No knowledge bases shared with you." showOwner />
       ),
     },
     {
       key: 'documents',
       label: 'Documents',
-      children: (
-        <SharedNodeList
-          nodes={sharedNodes ?? []}
-          loading={sharedLoading}
-        />
-      ),
+      children: <SharedNodeList nodes={sharedNodes ?? []} loading={sharedLoading} />,
     },
   ];
 
@@ -177,57 +166,51 @@ function KbSection({
       <Text type="secondary" className={styles.sectionTitle}>
         {title}
       </Text>
-      <List
-        className={styles.list}
-        bordered
-        dataSource={kbs}
-        renderItem={(kb) => (
-          <List.Item
-            actions={
-              onDelete
-                ? [
-                    <Popconfirm
-                      key="delete"
-                      title="Delete this knowledge base?"
-                      description="All documents within it will be deleted."
-                      okText="Delete"
-                      okButtonProps={{ danger: true }}
-                      onConfirm={() => onDelete(kb.id)}
-                    >
-                      <Button type="text" danger icon={<DeleteOutlined />} />
-                    </Popconfirm>,
-                  ]
-                : undefined
-            }
-          >
-            <List.Item.Meta
-              avatar={<Avatar icon={<TeamOutlined />} />}
-              title={
-                <a onClick={() => navigate(`/kb/${kb.id}`)}>{kb.title || 'Untitled Space'}</a>
-              }
-              description={
-                <Text type="secondary">
-                  {showOwner ? `Owned by ${kb.owner.name} · ` : ''}
-                  {kb.nodeCount} document{kb.nodeCount !== 1 ? 's' : ''} ·{' '}
-                  {new Date(kb.updatedAt).toLocaleString()}
-                </Text>
-              }
-            />
-            <Tag>{showOwner ? 'Member' : 'Owner'}</Tag>
-          </List.Item>
-        )}
-      />
+      <div className={styles.list}>
+        {kbs.map((kb) => (
+          <div key={kb.id} className={styles.listItem}>
+            <Avatar icon={<TeamOutlined />} />
+            <div className={styles.listItemContent}>
+              <button
+                type="button"
+                className={styles.itemLink}
+                onClick={() => navigate(`/kb/${kb.id}`)}
+              >
+                {kb.title || 'Untitled Space'}
+              </button>
+              <Text type="secondary">
+                {showOwner ? `Owned by ${kb.owner.name} · ` : ''}
+                {kb.nodeCount} document{kb.nodeCount !== 1 ? 's' : ''} ·{' '}
+                {new Date(kb.updatedAt).toLocaleString()}
+              </Text>
+            </div>
+            <div className={styles.listItemActions}>
+              <Tag>{showOwner ? 'Member' : 'Owner'}</Tag>
+              {onDelete ? (
+                <Popconfirm
+                  title="Delete this knowledge base?"
+                  description="All documents within it will be deleted."
+                  okText="Delete"
+                  okButtonProps={{ danger: true }}
+                  onConfirm={() => onDelete(kb.id)}
+                >
+                  <Button
+                    type="text"
+                    danger
+                    icon={<DeleteOutlined />}
+                    aria-label={`Delete ${kb.title || 'Untitled Space'}`}
+                  />
+                </Popconfirm>
+              ) : null}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
-function SharedNodeList({
-  nodes,
-  loading,
-}: {
-  nodes: SharedNode[];
-  loading: boolean;
-}) {
+function SharedNodeList({ nodes, loading }: { nodes: SharedNode[]; loading: boolean }) {
   const navigate = useNavigate();
 
   if (loading) {
@@ -266,35 +249,25 @@ function SharedNodeList({
           <Text type="secondary" className={styles.sectionTitle}>
             In {group.title}
           </Text>
-          <List
-            className={styles.list}
-            bordered
-            dataSource={group.nodes}
-            renderItem={(item) => (
-              <List.Item
-                actions={[
-                  <Button
-                    key="open"
-                    type="link"
-                    onClick={() => navigate(`/kb/${kbId}/${item.node.id}`)}
-                  >
+          <div className={styles.list}>
+            {group.nodes.map((item) => (
+              <div key={item.node.id} className={styles.listItem}>
+                <Avatar icon={<FileOutlined />} />
+                <div className={styles.listItemContent}>
+                  <Text strong>{item.node.title || 'Untitled'}</Text>
+                  <Text type="secondary">
+                    {item.node.type === 'FOLDER' ? 'Folder' : 'Document'}
+                  </Text>
+                </div>
+                <div className={styles.listItemActions}>
+                  <Tag>{item.role}</Tag>
+                  <Button type="link" onClick={() => navigate(`/kb/${kbId}/${item.node.id}`)}>
                     Open
-                  </Button>,
-                ]}
-              >
-                <List.Item.Meta
-                  avatar={<Avatar icon={<FileOutlined />} />}
-                  title={item.node.title || 'Untitled'}
-                  description={
-                    <Text type="secondary">
-                      {item.node.type === 'FOLDER' ? 'Folder' : 'Document'}
-                    </Text>
-                  }
-                />
-                <Tag>{item.role}</Tag>
-              </List.Item>
-            )}
-          />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       ))}
     </div>

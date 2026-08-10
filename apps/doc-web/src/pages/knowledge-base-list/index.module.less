@@ -34,7 +34,55 @@
 }
 
 .list {
+  overflow: hidden;
+  border: 1px solid #d9d9d9;
   border-radius: 8px;
+  background: #fff;
+}
+
+.listItem {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 24px;
+}
+
+.listItem + .listItem {
+  border-top: 1px solid #f0f0f0;
+}
+
+.listItemContent {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.listItemActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.itemLink {
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #1677ff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.itemLink:hover {
+  color: #69b1ff;
+}
+
+.itemLink:focus-visible {
+  outline: 2px solid #1677ff;
+  outline-offset: 2px;
 }
 
 .empty {
@@ -56,13 +104,19 @@
     padding: 16px;
   }
 
-  .list :global(.ant-list-item) {
+  .listItem {
     align-items: flex-start;
     flex-wrap: wrap;
     gap: 8px;
+    padding: 12px 16px;
   }
 
-  .list :global(.ant-list-item-action) {
-    margin-inline-start: 0;
+  .listItemContent {
+    flex-basis: calc(100% - 48px);
+  }
+
+  .listItemActions {
+    width: 100%;
+    justify-content: flex-end;
   }
 }
