@@ -533,8 +533,20 @@ export function AgentWorkspace({
         baseJson={reviewBaseJson}
         changeSet={changeSet}
         confirmProposals={async (proposalIds) => {
+          let lastError: unknown = null;
           for (const proposalId of proposalIds) {
-            await agentApi.confirmProposal(proposalId);
+            try {
+              await agentApi.confirmProposal(proposalId);
+            } catch (err) {
+              // 409 = 已非 PENDING（已确认/过期/已应用），属于变更集残留，跳过即可
+              const status = (err as { response?: { status: number } })?.response?.status;
+              if (status !== 409) {
+                lastError = err;
+              }
+            }
+          }
+          if (lastError) {
+            throw lastError;
           }
         }}
         onClose={() => setReviewOpen(false)}

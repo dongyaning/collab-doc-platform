@@ -3,9 +3,6 @@ import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Alert, Button, Drawer, Space, Tag, Typography } from 'antd';
 import type { JSONContent } from '@tiptap/core';
-import { WidgetExtension } from '../../extensions/widget/widget';
-import { WidgetNodeView } from '../../extensions/widget/widget-node-view';
-import { ReactNodeViewRenderer } from '@tiptap/react';
 import { applyEditsToPreview, extractEditText } from '../../agent/review/apply-edits';
 import {
   applyChangeSetToEditor,
@@ -28,15 +25,7 @@ export interface ReviewViewerProps {
   onRejected: (proposalIds: string[]) => void;
 }
 
-const reviewExtensions = [
-  StarterKit.configure({ history: false }),
-  WidgetExtension.extend({
-    addNodeView() {
-      return ReactNodeViewRenderer(WidgetNodeView);
-    },
-  }),
-  ReviewHighlightExtension,
-];
+const reviewExtensions = [StarterKit.configure({ history: false }), ReviewHighlightExtension];
 
 /**
  * 文档变更评审视图（客户端本地行为，不写入协同文档）。
@@ -192,7 +181,7 @@ export function ReviewViewer({
         </Space>
       }
     >
-      {error ? <Alert type="error" message={error} showIcon style={{ marginBottom: 12 }} /> : null}
+      {error ? <Alert type="error" title={error} showIcon style={{ marginBottom: 12 }} /> : null}
       <div style={{ fontSize: 13, color: '#888', marginBottom: 8 }}>
         {showBase ? '变更前快照（只读）' : '变更后预览（绿色为新增，可编辑；红色为删除内容）'}
       </div>
