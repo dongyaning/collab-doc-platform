@@ -1,4 +1,4 @@
-import { Extension } from '@tiptap/core';
+import { Extension, Mark } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 
@@ -7,7 +7,6 @@ export const reviewAddMarkName = 'reviewAdd';
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
     reviewAdd: {
-      /** 给选区包裹评审标记（editId 标识归属）。 */
       setReviewAddMark: (editId: string) => ReturnType;
     };
   }
@@ -23,9 +22,25 @@ export interface ReviewEditInfo {
 }
 
 export interface ReviewHighlightOptions {
-  /** 应用后的 edit 位置信息，用于 removed 叠加与可编辑判断。 */
   edits: ReviewEditInfo[];
 }
+
+const ReviewAddMark = Mark.create({
+  name: reviewAddMarkName,
+  inclusive: true,
+  spanning: true,
+  parseHTML() {
+    return [{ tag: 'span[data-review-add]' }];
+  },
+  renderHTML({ mark }: { mark: { attrs: { editId?: string | null } } }) {
+    return ['span', { class: 'review-add', 'data-review-add': mark.attrs.editId }];
+  },
+  addAttributes() {
+    return {
+      editId: { default: null },
+    };
+  },
+});
 
 /**
  * 评审高亮扩展：added 文本（reviewAdd mark）绿底、removed 原文红底叠加、
@@ -38,6 +53,10 @@ export const ReviewHighlightExtension = Extension.create<ReviewHighlightOptions>
     return { edits: [] };
   },
 
+  addExtensions() {
+    return [ReviewAddMark];
+  },
+
   addCommands() {
     return {
       setReviewAddMark:
@@ -46,27 +65,6 @@ export const ReviewHighlightExtension = Extension.create<ReviewHighlightOptions>
           return commands.setMark(reviewAddMarkName, { editId });
         },
     };
-  },
-
-  addMarks() {
-    return [
-      {
-        name: reviewAddMarkName,
-        inclusive: true,
-        spanning: true,
-        parseHTML() {
-          return [{ tag: 'span[data-review-add]' }];
-        },
-        renderHTML({ mark }: { mark: { attrs: { editId?: string | null } } }) {
-          return ['span', { class: 'review-add', 'data-review-add': mark.attrs.editId }];
-        },
-        addAttributes() {
-          return {
-            editId: { default: null },
-          };
-        },
-      },
-    ];
   },
 
   addProseMirrorPlugins() {
