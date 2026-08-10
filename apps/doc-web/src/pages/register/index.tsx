@@ -152,7 +152,7 @@ export function RegisterPage() {
           </Form.Item>
           {error ? (
             <Form.Item>
-              <Alert type="error" message={error} showIcon />
+              <Alert type="error" title={error} showIcon />
             </Form.Item>
           ) : null}
           <Form.Item className={styles.submitItem}>

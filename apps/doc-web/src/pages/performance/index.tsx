@@ -145,7 +145,7 @@ export function PerformancePage() {
           </div>
         </div>
 
-        {hasError ? <Alert type="error" showIcon message="Failed to load monitor data." /> : null}
+        {hasError ? <Alert type="error" showIcon title="Failed to load monitor data." /> : null}
 
         <Spin spinning={isLoading}>
           <div className={styles.metricGrid}>
