@@ -11,6 +11,8 @@ import type { AgentRunStatus } from '@prisma/client';
 import { AgentService } from './agent.service.js';
 import { ContextBuilder } from './context-builder.js';
 import { createProposeDocumentPatchTool } from './tools/propose-document-patch.tool.js';
+import { createProposeWidgetTool } from './tools/propose-widget.tool.js';
+import { AgentWidgetService } from './widgets/agent-widget.service.js';
 import { ModelProviderFactory } from './model-provider.factory.js';
 
 /** 历史轮次超过该值时，早期轮次压缩为滚动摘要，最近 MAX_HISTORY_TURNS 轮保留原文。 */
@@ -55,6 +57,7 @@ export class AgentOrchestrator {
   constructor(
     @Inject(AgentService) private readonly agentService: AgentService,
     @Inject(ContextBuilder) private readonly contextBuilder: ContextBuilder,
+    @Inject(AgentWidgetService) private readonly widgetService: AgentWidgetService,
     @Inject(ModelProviderFactory) private readonly modelProviderFactory: ModelProviderFactory
   ) {}
 
@@ -87,6 +90,7 @@ export class AgentOrchestrator {
         kbId: input.kbId,
         nodeId: input.nodeId,
         selection: input.selection,
+        conversationId: input.conversationId,
       });
 
       // A run that carries a selection intends to rewrite the document,
@@ -118,7 +122,10 @@ export class AgentOrchestrator {
     await this.agentService.updateRun(run.id, { status: 'PREPARING_CONTEXT' });
 
     // 3. Prepare tools
-    const tools: AgentTool[] = [createProposeDocumentPatchTool(this.agentService)];
+    const tools: AgentTool[] = [
+      createProposeDocumentPatchTool(this.agentService),
+      createProposeWidgetTool(this.agentService, this.widgetService),
+    ];
 
     // 4. Build conversation history: replay past turns, and when the turn
     //    count exceeds MAX_HISTORY_TURNS, compress early turns into a rolling
@@ -153,6 +160,7 @@ export class AgentOrchestrator {
         maxSteps: 3,
       },
       history,
+      systemPromptAppend: await this.buildSystemPromptAppend(input.kbId),
     };
 
     let finalAnswer = '';
@@ -242,6 +250,31 @@ export class AgentOrchestrator {
       return 'BUDGET_EXHAUSTED';
     }
     return 'CANCELLED';
+  }
+
+  /** 组装注入系统提示词末尾的组件生成规范与组件目录（复用决策）。 */
+  private async buildSystemPromptAppend(kbId: string): Promise<string> {
+    let catalogText = '';
+    try {
+      const widgets = await this.widgetService.listActive(kbId);
+      if (widgets.length > 0) {
+        catalogText =
+          '\n\n当前知识库已有以下自定义组件，插入组件时优先复用（propose_widget 复用模式不提供 sourceCode，只填 props）：\n' +
+          widgets.map((w) => `- ${w.widgetType}: ${w.title}`).join('\n');
+      }
+    } catch {
+      catalogText = '';
+    }
+
+    return (
+      '当用户要求插入自定义组件时，使用 propose_widget 工具。生成新组件必须符合规范：\n' +
+      '- 单文件 TSX，默认导出组件，仅使用 React 内置 API，禁止 import 第三方库\n' +
+      '- 组件接收 { props, updateProps, mode, editable }，状态必须通过 props.updateProps 回写\n' +
+      '- props 必须 JSON 可序列化：string / number / boolean / null / array / object，禁止函数、Date、循环引用\n' +
+      '- 组件应自适应容器宽度，禁止外部网络请求与弹窗\n' +
+      '- 生成的新组件必须经用户确认后才会生效' +
+      catalogText
+    );
   }
 
   /** Convert runs into user/assistant turn pairs, skipping failed turns (no finalAnswer). */

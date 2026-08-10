@@ -14,10 +14,13 @@ import {
 } from '@nestjs/common';
 import { IsInt, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 import { type Request, type Response } from 'express';
+import { gunzipSync } from 'node:zlib';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { CurrentUser, type AuthUser } from '../auth/current-user.decorator.js';
+import { KnowledgeBasesService } from '../knowledge-bases/knowledge-bases.service.js';
 import { AgentOrchestrator } from './agent-orchestrator.js';
 import { AgentService } from './agent.service.js';
+import { AgentWidgetService } from './widgets/agent-widget.service.js';
 
 class CreateRunDto {
   @IsString()
@@ -54,8 +57,62 @@ class CreateConversationDto {
 export class AgentController {
   constructor(
     @Inject(AgentOrchestrator) private readonly orchestrator: AgentOrchestrator,
-    @Inject(AgentService) private readonly agentService: AgentService
+    @Inject(AgentService) private readonly agentService: AgentService,
+    @Inject(AgentWidgetService) private readonly widgetService: AgentWidgetService,
+    @Inject(KnowledgeBasesService) private readonly kbService: KnowledgeBasesService
   ) {}
+
+  /**
+   * 组件目录：知识库内 ACTIVE 组件（不含代码），供 Agent 复用决策与前端展示。
+   */
+  @Get('widgets')
+  async listWidgets(@Query('kbId') kbId: string, @CurrentUser() user: AuthUser) {
+    if (!kbId) {
+      throw new BadRequestException('kbId is required');
+    }
+    const role = await this.kbService.getEffectiveRole(user.id, kbId);
+    if (!role) {
+      throw new NotFoundException('Knowledge base not found or no access');
+    }
+    return this.widgetService.listActive(kbId);
+  }
+
+  /**
+   * 组件详情：按 widgetType 返回 ACTIVE 组件（含 jsCode）。
+   * 由 nodeId 定位所属知识库并校验访问权限（VIEWER 及以上）。
+   * 同一版本代码不可变，配合 immutable 缓存前端只拉一次。
+   */
+  @Get('widgets/:widgetType')
+  async getWidget(
+    @Param('widgetType') widgetType: string,
+    @Query('nodeId') nodeId: string,
+    @CurrentUser() user: AuthUser,
+    @Res() res: Response
+  ) {
+    if (!nodeId) {
+      throw new BadRequestException('nodeId is required');
+    }
+    const role = await this.kbService.getNodeEffectiveRole(user.id, nodeId);
+    if (!role) {
+      throw new NotFoundException('Document not found or no access');
+    }
+
+    const component = await this.widgetService.getActive(widgetType);
+    if (!component) {
+      throw new NotFoundException('Agent widget not found or not active');
+    }
+
+    const jsCode = gunzipSync(component.jsCodeGzip).toString('utf8');
+    res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+    return res.json({
+      widgetType: component.widgetType,
+      title: component.title,
+      version: component.version,
+      propsSchema: component.propsSchema,
+      jsCode,
+      status: component.status,
+    });
+  }
 
   /** List conversations of the current user, scoped to a knowledge base. */
   @Get('conversations')
@@ -154,6 +211,14 @@ export class AgentController {
 
     const proposal = await this.agentService.confirmProposal(id, user.id);
     await this.agentService.updateRun(proposal.runId, { status: 'APPLYING' });
+
+    // 提案含 widget edit 时激活组件（DRAFT → ACTIVE），复用模式为无害 no-op
+    const patch = proposal.patch as { edits?: Array<{ kind?: string; widgetType?: string }> };
+    for (const edit of patch.edits ?? []) {
+      if (edit.kind === 'widget' && edit.widgetType) {
+        await this.widgetService.activateComponent(edit.widgetType);
+      }
+    }
 
     return { ok: true, proposalId: id, status: 'APPLYING' };
   }

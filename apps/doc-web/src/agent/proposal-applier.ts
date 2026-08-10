@@ -27,8 +27,17 @@ function clampPos(editor: Editor, pos: number): number {
  * 前端锚点（fromRelPos/toRelPos）优先：经 ySyncPlugin 的实时 binding 解析，
  * 相对位置自动跟随其他协作者的并发修改。
  * 内容锚点（baseContent）：在最新文档中唯一匹配原文片段，匹配失败或不唯一返回 null。
+ * widget edit：按 insertAfter 锚点文本定位，返回零宽插入点（range.to）。
  */
 function resolveEditRange(editor: Editor, edit: AgentEdit): { from: number; to: number } | null {
+  if (edit.kind === 'widget') {
+    const anchor = findUniqueTextRange(editor, edit.insertAfter);
+    if (!anchor) {
+      return null;
+    }
+    return { from: anchor.to, to: anchor.to };
+  }
+
   const hasAnchor = edit.fromRelPos !== undefined && edit.toRelPos !== undefined;
 
   if (hasAnchor) {
@@ -61,7 +70,10 @@ function resolveEditRange(editor: Editor, edit: AgentEdit): { from: number; to: 
  * Find the unique document range whose text equals `content`.
  * Only matches within a single text node (content must not cross block boundaries).
  */
-function findUniqueTextRange(editor: Editor, content: string): { from: number; to: number } | null {
+export function findUniqueTextRange(
+  editor: Editor,
+  content: string
+): { from: number; to: number } | null {
   if (!content) {
     return null;
   }
@@ -112,7 +124,7 @@ export function applyAgentProposal(
       failures.push({ edit, reason: 'not_found' });
       continue;
     }
-    if (!force) {
+    if (!force && edit.kind !== 'widget') {
       const current = editor.state.doc.textBetween(range.from, range.to, '\n');
       if (current !== edit.baseContent) {
         failures.push({ edit, reason: 'modified' });
@@ -138,7 +150,14 @@ export function applyAgentProposal(
 
   const chain = editor.chain().focus();
   for (const { edit, range } of ordered) {
-    chain.insertContentAt({ from: range.from, to: range.to }, edit.newText);
+    if (edit.kind === 'widget') {
+      chain.insertContentAt(range.to, {
+        type: 'widget',
+        attrs: { widgetType: edit.widgetType, props: edit.props },
+      });
+    } else {
+      chain.insertContentAt({ from: range.from, to: range.to }, edit.newText);
+    }
   }
   chain.run();
   return { status: 'applied' };

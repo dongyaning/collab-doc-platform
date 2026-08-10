@@ -4,12 +4,25 @@ export interface AgentSelection {
   content: string;
 }
 
-export interface AgentEdit {
+/** 文本替换 edit（默认，无 kind 兼容旧提案）。 */
+export interface AgentTextEdit {
+  kind?: 'text';
   fromRelPos?: unknown;
   toRelPos?: unknown;
   baseContent: string;
   newText: string;
 }
+
+/** 组件插入 edit（来自 propose_widget 工具）。 */
+export interface AgentWidgetEdit {
+  kind: 'widget';
+  widgetType: string;
+  title: string;
+  props: Record<string, unknown>;
+  insertAfter: string;
+}
+
+export type AgentEdit = AgentTextEdit | AgentWidgetEdit;
 
 export interface AgentPatch {
   edits: AgentEdit[];
@@ -24,9 +37,7 @@ export interface AgentProposal {
 }
 
 /** AgentEdit 增加 proposal 内稳定 id，用于列表 key（不依赖渲染 index）。 */
-export interface ViewEdit extends AgentEdit {
-  editId: string;
-}
+export type ViewEdit = AgentEdit & { editId: string };
 
 export interface ViewProposal extends Omit<AgentProposal, 'patch'> {
   patch: { edits: ViewEdit[] };

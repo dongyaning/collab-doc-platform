@@ -9,10 +9,19 @@ import { AgentOrchestrator } from './agent-orchestrator.js';
 import { AgentService } from './agent.service.js';
 import { ContextBuilder } from './context-builder.js';
 import { ModelProviderFactory } from './model-provider.factory.js';
+import { AgentWidgetService } from './widgets/agent-widget.service.js';
+import { KnowledgeBasesService } from '../knowledge-bases/knowledge-bases.service.js';
 
 @Module({
   imports: [PrismaModule, KnowledgeBasesModule, NodesModule, CollabModule, AuthModule],
   controllers: [AgentController],
-  providers: [AgentOrchestrator, AgentService, ContextBuilder, ModelProviderFactory],
+  providers: [
+    AgentOrchestrator,
+    AgentService,
+    ContextBuilder,
+    ModelProviderFactory,
+    AgentWidgetService,
+    KnowledgeBasesService,
+  ],
 })
 export class AgentModule {}

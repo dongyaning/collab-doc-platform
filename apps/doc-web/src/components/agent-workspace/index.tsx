@@ -1,17 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { Editor } from '@tiptap/react';
-import { Alert, App as AntdApp, Button, Empty, Input, Space, Spin, Tag, Typography } from 'antd';
+import type { JSONContent } from '@tiptap/core';
+import { Alert, App as AntdApp, Button, Empty, Input, Spin, Tag, Typography } from 'antd';
 import {
   CheckOutlined,
-  CloseOutlined,
   MessageOutlined,
   PlusOutlined,
   SendOutlined,
   StopOutlined,
 } from '@ant-design/icons';
 import { agentApi, type RunRecord } from '../../agent/agent.api';
-import { applyAgentProposal } from '../../agent/proposal-applier';
 import type {
   AgentEvent,
   AgentProposal,
@@ -20,6 +19,8 @@ import type {
   ConversationSummary,
   ViewProposal,
 } from '../../agent/agent.types';
+import type { ChangeSetItem } from '../../agent/review/apply-change-set';
+import { ReviewViewer } from '../review-viewer';
 import styles from './index.module.less';
 
 const { Paragraph, Text } = Typography;
@@ -90,7 +91,7 @@ export function AgentWorkspace({
   editor,
   selection,
 }: AgentWorkspaceProps) {
-  const { message: messageApi, modal: modalApi } = AntdApp.useApp();
+  const { message: messageApi } = AntdApp.useApp();
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -102,6 +103,12 @@ export function AgentWorkspace({
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const activeConversationIdRef = useRef<string | null>(null);
   activeConversationIdRef.current = activeConversationId;
+
+  // 评审视图：一次评审期（从首个提案到确认/拒绝），同一会话多次 run 的 edits 累积
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewBaseJson, setReviewBaseJson] = useState<JSONContent | null>(null);
+  const [changeSet, setChangeSet] = useState<ChangeSetItem[]>([]);
+  const reviewBaseJsonSetRef = useRef(false);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -139,6 +146,11 @@ export function AgentWorkspace({
     setMessages([]);
     setHistoryLoading(true);
     setHistoryError('');
+    // 切换会话时结束当前评审期
+    setReviewOpen(false);
+    setChangeSet([]);
+    setReviewBaseJson(null);
+    reviewBaseJsonSetRef.current = false;
     try {
       const runs = await agentApi.listRuns(conversationId);
       setMessages(rebuildHistory(runs));
@@ -186,18 +198,27 @@ export function AgentWorkspace({
           content: SUMMARIZING_TEXT,
         }));
         break;
-      case 'proposal_ready':
-        patchLastAssistantMessage((last) => ({
-          ...last,
-          proposal: toViewProposal({
-            proposalId: event.proposalId,
-            runId: event.runId,
-            nodeId: event.nodeId,
-            baseVersion: event.baseVersion,
-            patch: event.patch as AgentProposal['patch'],
-          }),
-        }));
+      case 'proposal_ready': {
+        const viewProposal = toViewProposal({
+          proposalId: event.proposalId,
+          runId: event.runId,
+          nodeId: event.nodeId,
+          baseVersion: event.baseVersion,
+          patch: event.patch as AgentProposal['patch'],
+        });
+        patchLastAssistantMessage((last) => ({ ...last, proposal: viewProposal }));
+        // 首次提案时记录评审基线快照，后续 run 的 edits 累积进同一变更集
+        if (editor && !reviewBaseJsonSetRef.current) {
+          reviewBaseJsonSetRef.current = true;
+          setReviewBaseJson(editor.getJSON() as JSONContent);
+        }
+        setChangeSet((prev) => [
+          ...prev,
+          { proposalId: event.proposalId, edits: viewProposal.patch.edits },
+        ]);
+        setReviewOpen(true);
         break;
+      }
       case 'final_answer':
         patchLastAssistantMessage((last) => ({ ...last, content: event.text }));
         break;
@@ -295,125 +316,51 @@ export function AgentWorkspace({
     }
   };
 
-  const finishProposal = (messageId: string, outcome: 'applied' | 'rejected') => {
-    setMessages((prev) =>
-      prev.map((msg) =>
-        msg.id === messageId ? { ...msg, status: 'done', proposalOutcome: outcome } : msg
-      )
-    );
-  };
-
-  const applyProposal = async (
-    message: ChatMessage,
-    proposal: ViewProposal,
-    force: boolean
-  ): Promise<boolean> => {
-    if (proposal.nodeId !== nodeId) {
-      messageApi.warning('该提案针对其他文档，无法在当前文档应用');
-      return false;
-    }
-    const result = applyAgentProposal(editor, proposal as AgentProposal, false);
-    if (result.status === 'applied') {
-      await agentApi.acknowledgeApplied(proposal.proposalId);
-      finishProposal(message.id, 'applied');
-      messageApi.success('Agent edit applied');
-      return true;
-    }
-
-    const canForce =
-      result.failures.length > 0 &&
-      result.failures.every((failure) => failure.reason === 'modified');
-
-    if (force && result.status === 'conflict') {
-      const forced = applyAgentProposal(editor, proposal as AgentProposal, true);
-      if (forced.status === 'applied') {
-        await agentApi.acknowledgeApplied(proposal.proposalId);
-        finishProposal(message.id, 'applied');
-        messageApi.success('Agent edit applied');
-        return true;
+  const handleReviewConfirmed = useCallback(
+    async (proposalIds: string[]) => {
+      for (const proposalId of proposalIds) {
+        await agentApi.acknowledgeApplied(proposalId).catch(() => undefined);
       }
-      await agentApi.markProposalStale(proposal.proposalId).catch(() => undefined);
-      messageApi.info('Generate a new proposal.');
-      return false;
-    }
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.proposal && proposalIds.includes(msg.proposal.proposalId)
+            ? { ...msg, status: 'done', proposalOutcome: 'applied' }
+            : msg
+        )
+      );
+      setChangeSet([]);
+      setReviewBaseJson(null);
+      reviewBaseJsonSetRef.current = false;
+      messageApi.success('Agent edit applied');
+    },
+    [messageApi]
+  );
 
-    return new Promise<boolean>((resolve) => {
-      modalApi.confirm({
-        title: 'The selected content has been modified by someone else',
-        content: (
-          <div>
-            <Paragraph className={styles.conflictLine}>
-              <Text strong>Modified content:</Text>
-              <br />
-              {result.failures
-                .slice(0, 3)
-                .map((failure) => failure.edit.baseContent)
-                .filter(Boolean)
-                .join(', ') || 'No longer exists'}
-            </Paragraph>
-            <Paragraph className={styles.conflictLine}>
-              <Text strong>Agent suggestion:</Text>
-              <br />
-              {result.failures[0]?.edit.newText ?? ''}
-            </Paragraph>
-          </div>
-        ),
-        okText: canForce ? 'Still apply' : 'OK',
-        cancelText: canForce ? 'Regenerate' : 'Close',
-        onOk: async () => {
-          if (canForce) {
-            const forced = applyAgentProposal(editor, proposal as AgentProposal, true);
-            if (forced.status === 'applied') {
-              await agentApi.acknowledgeApplied(proposal.proposalId);
-              finishProposal(message.id, 'applied');
-              messageApi.success('Agent edit applied');
-              resolve(true);
-              return;
-            }
-            await agentApi.markProposalStale(proposal.proposalId).catch(() => undefined);
-            messageApi.info('Generate a new proposal.');
-          }
-          resolve(false);
-        },
-        onCancel: async () => {
-          await agentApi.rejectProposal(proposal.proposalId).catch(() => undefined);
-          finishProposal(message.id, 'rejected');
-          messageApi.info('Agent edit rejected');
-          resolve(false);
-        },
-      });
-    });
-  };
-
-  const confirmProposal = async (message: ChatMessage) => {
-    if (!message.proposal || runState === 'running') {
-      return;
-    }
-    try {
-      await agentApi.confirmProposal(message.proposal.proposalId);
-      await applyProposal(message, message.proposal, false);
-    } catch (applyError) {
-      const text =
-        applyError instanceof Error ? applyError.message : 'Agent edit could not be applied';
-      messageApi.error(text);
-    }
-  };
-
-  const rejectProposal = async (message: ChatMessage) => {
-    if (!message.proposal) {
-      return;
-    }
-    await agentApi.rejectProposal(message.proposal.proposalId);
-    finishProposal(message.id, 'rejected');
-    messageApi.info('Agent edit rejected');
-  };
+  const handleReviewRejected = useCallback(
+    async (proposalIds: string[]) => {
+      for (const proposalId of proposalIds) {
+        await agentApi.rejectProposal(proposalId).catch(() => undefined);
+      }
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.proposal && proposalIds.includes(msg.proposal.proposalId)
+            ? { ...msg, status: 'done', proposalOutcome: 'rejected' }
+            : msg
+        )
+      );
+      setChangeSet([]);
+      setReviewBaseJson(null);
+      reviewBaseJsonSetRef.current = false;
+      messageApi.info('Agent edit rejected');
+    },
+    [messageApi]
+  );
 
   const renderProposal = (message: ChatMessage) => {
     const proposal = message.proposal;
     if (!proposal) {
       return null;
     }
-    const actionable = !message.proposalOutcome;
     return (
       <div className={styles.proposalSection}>
         <div className={styles.sectionHeader}>
@@ -422,42 +369,19 @@ export function AgentWorkspace({
             <Tag color="green">Applied</Tag>
           ) : message.proposalOutcome === 'rejected' ? (
             <Tag>Rejected</Tag>
-          ) : null}
+          ) : (
+            <Tag color="blue">待评审</Tag>
+          )}
         </div>
-        <div className={styles.diffBlock}>
-          {proposal.patch.edits.map((edit) => (
-            <div key={edit.editId} className={styles.diffEdit}>
-              <div className={styles.removedLine}>
-                <span className={styles.diffMark}>−</span>
-                <span>{edit.baseContent}</span>
-              </div>
-              <div className={styles.addedLine}>
-                <span className={styles.diffMark}>+</span>
-                <span>{edit.newText}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-        {actionable ? (
-          <Space className={styles.proposalActions}>
-            <Button
-              type="primary"
-              size="small"
-              icon={<CheckOutlined />}
-              disabled={runState === 'running'}
-              onClick={() => confirmProposal(message)}
-            >
-              Apply
-            </Button>
-            <Button
-              size="small"
-              icon={<CloseOutlined />}
-              disabled={runState === 'running'}
-              onClick={() => rejectProposal(message)}
-            >
-              Reject
-            </Button>
-          </Space>
+        {!message.proposalOutcome ? (
+          <Button
+            size="small"
+            icon={<CheckOutlined />}
+            disabled={runState === 'running'}
+            onClick={() => setReviewOpen(true)}
+          >
+            在文档中查看与确认变更
+          </Button>
         ) : null}
       </div>
     );
@@ -602,6 +526,21 @@ export function AgentWorkspace({
           </div>
         </div>
       </main>
+
+      <ReviewViewer
+        open={reviewOpen}
+        editor={editor}
+        baseJson={reviewBaseJson}
+        changeSet={changeSet}
+        confirmProposals={async (proposalIds) => {
+          for (const proposalId of proposalIds) {
+            await agentApi.confirmProposal(proposalId);
+          }
+        }}
+        onClose={() => setReviewOpen(false)}
+        onConfirmed={handleReviewConfirmed}
+        onRejected={handleReviewRejected}
+      />
     </div>
   );
 }

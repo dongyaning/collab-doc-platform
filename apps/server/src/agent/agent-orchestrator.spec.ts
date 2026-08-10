@@ -4,6 +4,7 @@ import { AgentOrchestrator } from './agent-orchestrator.js';
 import type { SseAgentEvent } from './agent-orchestrator.js';
 import { AgentService } from './agent.service.js';
 import { ContextBuilder } from './context-builder.js';
+import { AgentWidgetService } from './widgets/agent-widget.service.js';
 import { ModelProviderFactory } from './model-provider.factory.js';
 
 vi.mock('./agent.service.js', () => ({
@@ -31,6 +32,12 @@ vi.mock('./model-provider.factory.js', () => ({
   },
 }));
 
+vi.mock('./widgets/agent-widget.service.js', () => ({
+  AgentWidgetService: class {
+    listActive = vi.fn();
+  },
+}));
+
 function failingProvider(): ModelProvider {
   return {
     stream: async function* (): AsyncIterable<ModelEvent> {
@@ -44,7 +51,8 @@ async function runOrchestrator(
   setup?: (agentService: AgentService) => void
 ): Promise<{ events: SseAgentEvent[]; agentService: AgentService }> {
   const agentService = new AgentService({} as never);
-  const contextBuilder = new ContextBuilder({} as never);
+  const contextBuilder = new ContextBuilder({} as never, {} as never);
+  const widgetService = new AgentWidgetService({} as never);
   const factory = new ModelProviderFactory({} as never);
   (factory.create as ReturnType<typeof vi.fn>).mockReturnValue({
     provider,
@@ -59,6 +67,7 @@ async function runOrchestrator(
   const orchestrator = new AgentOrchestrator(
     agentService as unknown as AgentService,
     contextBuilder as unknown as ContextBuilder,
+    widgetService as unknown as AgentWidgetService,
     factory as unknown as ModelProviderFactory
   );
 

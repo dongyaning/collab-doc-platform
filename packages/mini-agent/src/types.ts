@@ -136,6 +136,8 @@ export interface RunRequest {
   budget?: Partial<RunBudget>;
   /** 历史对话消息（含内部摘要），位于系统提示词与当前用户消息之间。 */
   history?: Message[];
+  /** 追加到系统提示词末尾的应用特定指令（如组件生成规范），由宿主注入，保持运行时通用。 */
+  systemPromptAppend?: string;
 }
 
 // ---------------------------------------------------------------------------

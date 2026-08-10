@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState, type FocusEvent } from 'react
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
 import { absolutePositionToRelativePosition, ySyncPluginKey } from 'y-prosemirror';
 import { getWidget, normalizeWidgetProps } from './registry';
+import { loadAgentWidget, type AgentWidgetMeta } from './agent-widget-loader';
+import { WidgetSandbox } from './widget-sandbox';
 
 type AwarenessProvider = {
   awareness?: {
@@ -39,6 +41,12 @@ function clearWidgetNodeCursor(editor: NodeViewProps['editor']) {
   provider?.awareness?.setLocalStateField('nodeCursor', null);
 }
 
+type AgentLoadState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'ready'; meta: AgentWidgetMeta }
+  | { status: 'error' };
+
 export function WidgetNodeView(props: NodeViewProps) {
   const { node, updateAttributes, editor, getPos, selected } = props;
   const [isSelected, setIsSelected] = useState(false);
@@ -49,6 +57,33 @@ export function WidgetNodeView(props: NodeViewProps) {
   const editable = editor.isEditable;
   const mode = editable ? 'edit' : 'read';
   const normalizedProps = normalizeWidgetProps(definition, widgetProps);
+
+  // Agent 组件异步加载状态（注册表未命中时走此分支）
+  const [agentState, setAgentState] = useState<AgentLoadState>({ status: 'idle' });
+  const nodeId = (editor.storage as { widgetRuntime?: { nodeId?: string } } | undefined)
+    ?.widgetRuntime?.nodeId;
+
+  useEffect(() => {
+    if (definition || !widgetType || !nodeId) {
+      return undefined;
+    }
+    let cancelled = false;
+    setAgentState({ status: 'loading' });
+    loadAgentWidget(widgetType, nodeId)
+      .then((meta) => {
+        if (!cancelled) {
+          setAgentState({ status: 'ready', meta });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAgentState({ status: 'error' });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [definition, widgetType, nodeId]);
 
   useEffect(() => {
     if (!editor || typeof getPos !== 'function') {
@@ -112,10 +147,111 @@ export function WidgetNodeView(props: NodeViewProps) {
   );
 
   const showSelected = isSelected || selected;
+  const wrapperStyle: React.CSSProperties = {
+    margin: '0.75em 0',
+    outline: showSelected ? '2px solid #1967d2' : undefined,
+    outlineOffset: 2,
+    borderRadius: 6,
+    cursor: 'pointer',
+  };
 
-  if (!definition) {
+  // 分支 1：预设组件（注册表命中）
+  if (definition) {
+    const WidgetComponent = definition.component;
     return (
       <NodeViewWrapper
+        style={wrapperStyle}
+        onClick={selectWidgetNode}
+        onFocusCapture={handleFocusInside}
+        onBlurCapture={handleBlurInside}
+        ref={wrapperRef}
+      >
+        <WidgetComponent
+          props={normalizedProps}
+          updateProps={handleUpdateProps}
+          selected={showSelected}
+          mode={mode}
+          editable={editable}
+        />
+      </NodeViewWrapper>
+    );
+  }
+
+  // 分支 2：Agent 组件（未命中注册表，异步加载后沙箱渲染）
+  if (agentState.status === 'loading') {
+    return (
+      <NodeViewWrapper style={wrapperStyle} ref={wrapperRef}>
+        <div
+          style={{
+            border: '1px dashed #d9d9d9',
+            borderRadius: 6,
+            padding: '24px 16px',
+            textAlign: 'center' as const,
+            color: '#999',
+            fontSize: 13,
+          }}
+        >
+          组件加载中：{String(widgetType ?? '')}
+        </div>
+      </NodeViewWrapper>
+    );
+  }
+
+  if (agentState.status === 'error') {
+    return (
+      <NodeViewWrapper
+        style={wrapperStyle}
+        onClick={selectWidgetNode}
+        onFocusCapture={handleFocusInside}
+        onBlurCapture={handleBlurInside}
+        ref={wrapperRef}
+      >
+        <div
+          style={{
+            border: '1px dashed #d9d9d9',
+            borderRadius: 6,
+            padding: '24px 16px',
+            textAlign: 'center' as const,
+            color: '#c62828',
+            fontSize: 13,
+          }}
+        >
+          组件加载失败：{String(widgetType ?? '')}，请检查组件是否已确认激活
+        </div>
+      </NodeViewWrapper>
+    );
+  }
+
+  if (agentState.status === 'ready') {
+    return (
+      <NodeViewWrapper
+        style={wrapperStyle}
+        onClick={selectWidgetNode}
+        onFocusCapture={handleFocusInside}
+        onBlurCapture={handleBlurInside}
+        ref={wrapperRef}
+      >
+        <WidgetSandbox
+          jsCode={agentState.meta.jsCode}
+          props={normalizedProps}
+          mode={mode}
+          editable={editable}
+          onPropsChange={handleUpdateProps}
+        />
+      </NodeViewWrapper>
+    );
+  }
+
+  // 分支 3：未知 widgetType（无注册表定义、无 nodeId 上下文或加载未触发）
+  return (
+    <NodeViewWrapper
+      style={wrapperStyle}
+      onClick={selectWidgetNode}
+      onFocusCapture={handleFocusInside}
+      onBlurCapture={handleBlurInside}
+      ref={wrapperRef}
+    >
+      <div
         style={{
           border: '1px dashed #d9d9d9',
           borderRadius: 6,
@@ -123,44 +259,10 @@ export function WidgetNodeView(props: NodeViewProps) {
           textAlign: 'center' as const,
           color: '#999',
           fontSize: 13,
-          margin: '0.75em 0',
-          cursor: 'pointer',
-          outline: showSelected ? '2px solid #1967d2' : undefined,
-          outlineOffset: 2,
         }}
-        onClick={selectWidgetNode}
-        onFocusCapture={handleFocusInside}
-        onBlurCapture={handleBlurInside}
-        ref={wrapperRef}
       >
         Unknown widget: {String(widgetType ?? '')}
-      </NodeViewWrapper>
-    );
-  }
-
-  const WidgetComponent = definition.component;
-
-  return (
-    <NodeViewWrapper
-      style={{
-        margin: '0.75em 0',
-        outline: showSelected ? '2px solid #1967d2' : undefined,
-        outlineOffset: 2,
-        borderRadius: 6,
-        cursor: 'pointer',
-      }}
-      onClick={selectWidgetNode}
-      onFocusCapture={handleFocusInside}
-      onBlurCapture={handleBlurInside}
-      ref={wrapperRef}
-    >
-      <WidgetComponent
-        props={normalizedProps}
-        updateProps={handleUpdateProps}
-        selected={showSelected}
-        mode={mode}
-        editable={editable}
-      />
+      </div>
     </NodeViewWrapper>
   );
 }

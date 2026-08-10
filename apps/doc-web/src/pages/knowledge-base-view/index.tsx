@@ -691,6 +691,13 @@ export function KnowledgeBaseViewPage() {
     editor.commands.setContent(contentQuery.data);
   }, [editor, contentQuery.data, provider, isEditing]);
 
+  // Agent 动态组件加载上下文：widget-node-view 按此拉取组件代码
+  useEffect(() => {
+    if (editor) {
+      editor.storage.widgetRuntime = { kbId, nodeId };
+    }
+  }, [editor, kbId, nodeId]);
+
   const openAgentWorkspace = useCallback(() => {
     // 通用 AI 入口：不要求编辑模式与选区；有选区且 Yjs 就绪时带上选区上下文
     let nextSelection: AgentSelection | null = null;

@@ -54,8 +54,12 @@ export class AgentRuntime {
       inputSchema: t.inputSchema,
     }));
 
+    const systemPrompt = request.systemPromptAppend
+      ? `${SYSTEM_PROMPT}\n\n${request.systemPromptAppend}`
+      : SYSTEM_PROMPT;
+
     const messages: Message[] = [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: systemPrompt },
       ...(request.history ?? []),
       { role: 'user', content: this.buildUserMessage(request) },
     ];

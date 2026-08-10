@@ -321,3 +321,31 @@ model AgentProposal {
   @@index([nodeId, status])
   @@index([status, expiresAt])
 }
+
+/// Agent 生成的动态组件注册表。代码与文档分离：文档 widget 节点只存 widgetType + props。
+/// 每个版本一条记录，第一版每组件一版（多版本语义预留）。
+model AgentComponent {
+  id          String                @id @default(cuid())
+  widgetType  String
+  kbId        String
+  title       String
+  version     Int                   @default(1)
+  /// TSX 源码。
+  sourceCode  String
+  /// esbuild 编译产物（自包含 ESM，bundle React），gzip 压缩后存储。
+  jsCodeGzip  Bytes
+  /// 组件 props 的 JSON Schema，第一版仅存储。
+  propsSchema Json?
+  status      AgentComponentStatus @default(DRAFT)
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  @@unique([widgetType, version])
+  @@index([kbId, status])
+}
+
+enum AgentComponentStatus {
+  DRAFT
+  ACTIVE
+  DISABLED
+}
