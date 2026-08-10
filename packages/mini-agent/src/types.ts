@@ -56,6 +56,13 @@ export interface ModelRequest {
   signal?: AbortSignal;
 }
 
+/** 非流式补全请求，用于滚动摘要等一次性文本生成。 */
+export interface CompleteRequest {
+  messages: Message[];
+  maxTokens?: number;
+  signal?: AbortSignal;
+}
+
 export type ModelEvent =
   | { type: 'token'; text: string }
   | { type: 'tool_call_start'; toolName: string; toolCallId: string; args: unknown }
@@ -66,6 +73,8 @@ export type ModelEvent =
 
 export interface ModelProvider {
   stream(request: ModelRequest): AsyncIterable<ModelEvent>;
+  /** 非流式补全，用于滚动摘要等一次性文本生成。实现方可选。 */
+  complete?(request: CompleteRequest): Promise<string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -79,6 +88,8 @@ export interface Message {
   content: string;
   toolCallId?: string;
   toolCalls?: ToolCall[];
+  /** 内部消息（如滚动摘要），仅 server/mini-agent 侧注解，不用于前端展示。 */
+  internal?: boolean;
 }
 
 export interface ToolCall {
@@ -123,6 +134,8 @@ export interface RunRequest {
   context: RunContext;
   tools: AgentTool[];
   budget?: Partial<RunBudget>;
+  /** 历史对话消息（含内部摘要），位于系统提示词与当前用户消息之间。 */
+  history?: Message[];
 }
 
 // ---------------------------------------------------------------------------

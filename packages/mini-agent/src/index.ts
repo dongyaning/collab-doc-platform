@@ -28,3 +28,5 @@ export { AgentRuntime } from './agent-runtime.js';
 
 // Providers
 export { MockModelProvider } from './mock-provider.js';
+export { OpenAICompatibleModelProvider } from './openai-compatible-provider.js';
+export type { OpenAICompatibleConfig } from './openai-compatible-provider.js';

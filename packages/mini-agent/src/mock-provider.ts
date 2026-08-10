@@ -1,40 +1,44 @@
-import type { ModelEvent, ModelProvider, ModelRequest, ToolSchema } from './types.js';
+import type {
+  CompleteRequest,
+  ModelEvent,
+  ModelProvider,
+  ModelRequest,
+  ToolSchema,
+} from './types.js';
 
 /**
  * MockModelProvider — hardcoded responses for development and testing.
  *
- * When the request mentions "propose_document_patch" (or talks about
- * rewrites / selections), it yields a mock tool_call with a fake patch.
- * Otherwise it yields a plain final_answer.
+ * The rewrite branch (propose_document_patch tool call) only triggers when
+ * the user message carries a selection context ("User selected text:"),
+ * because a rewrite patch without a selection anchor is not applicable.
+ * Plain questions and rewrite intent without a selection go to the Q&A branch.
  *
- * This lets us test the full Agent Runtime loop without a real LLM.
+ * Token events are emitted one character at a time with a configurable
+ * delay, simulating the typewriter rhythm of a real LLM stream.
  */
 export class MockModelProvider implements ModelProvider {
+  constructor(private readonly tokenDelayMs = 30) {}
+
+  async complete(_request: CompleteRequest): Promise<string> {
+    return '这是对早期历史对话的模拟摘要，保留关键主题与已完成的决策。';
+  }
+
   async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
     const userText = this.getUserText(request);
     const hasSelectionContext = userText.includes('User selected text:');
-    const hasRewriteIntent =
-      userText.includes('改写') ||
-      userText.includes('润色') ||
-      userText.includes('修改') ||
-      userText.includes('改得');
     const hasProposeTool = request.tools.some(
       (t: ToolSchema) => t.name === 'propose_document_patch'
     );
 
-    if ((hasSelectionContext || hasRewriteIntent) && hasProposeTool) {
+    if (hasSelectionContext && hasProposeTool) {
       // Simulate the model proposing a patch
-      yield { type: 'token', text: '好的' };
-      yield { type: 'token', text: '，' };
-      yield { type: 'token', text: '我' };
-      yield { type: 'token', text: '来' };
-      yield { type: 'token', text: '帮' };
-      yield { type: 'token', text: '你' };
-      yield { type: 'token', text: '改写' };
-      yield { type: 'token', text: '这' };
-      yield { type: 'token', text: '段' };
-      yield { type: 'token', text: '文字' };
-      yield { type: 'token', text: '。' };
+      for (const ch of '好的，我来帮你改这段文字。') {
+        yield { type: 'token', text: ch };
+        if (await this.tick(request.signal)) {
+          return;
+        }
+      }
 
       const baseContent = this.extractSelectionContent(userText);
       const toolCallId = 'mock_tc_1';
@@ -73,17 +77,25 @@ export class MockModelProvider implements ModelProvider {
       };
     } else {
       // Simple Q&A — no tool call
-      yield { type: 'token', text: '这' };
-      yield { type: 'token', text: '是' };
-      yield { type: 'token', text: '一' };
-      yield { type: 'token', text: '个' };
-      yield { type: 'token', text: '模' };
-      yield { type: 'token', text: '拟' };
-      yield { type: 'token', text: '回' };
-      yield { type: 'token', text: '答' };
-      yield { type: 'token', text: '。' };
+      for (const ch of '这是一个模拟回答。') {
+        yield { type: 'token', text: ch };
+        if (await this.tick(request.signal)) {
+          return;
+        }
+      }
       yield { type: 'final_answer', text: '这是一个模拟回答。Mini Agent Runtime 正在运行中。' };
     }
+  }
+
+  /**
+   * Wait for one token interval. Returns true when the stream was aborted,
+   * so the caller can stop yielding further events.
+   */
+  private async tick(signal?: AbortSignal): Promise<boolean> {
+    if (this.tokenDelayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, this.tokenDelayMs));
+    }
+    return signal?.aborted ?? false;
   }
 
   private getUserText(request: ModelRequest): string {
