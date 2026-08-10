@@ -46,6 +46,61 @@ export class AgentService {
     });
   }
 
+  async createConversation(userId: string, kbId: string) {
+    return this.prisma.agentConversation.create({
+      data: { userId, kbId },
+    });
+  }
+
+  async listConversations(userId: string, kbId: string) {
+    return this.prisma.agentConversation.findMany({
+      where: { userId, kbId },
+      orderBy: { lastMessageAt: { sort: 'desc', nulls: 'last' } },
+    });
+  }
+
+  async getConversation(conversationId: string) {
+    return this.prisma.agentConversation.findUnique({
+      where: { id: conversationId },
+    });
+  }
+
+  async listConversationRuns(conversationId: string) {
+    return this.prisma.agentRun.findMany({
+      where: { conversationId },
+      orderBy: { createdAt: 'asc' },
+      include: { proposals: true },
+    });
+  }
+
+  /** Bump lastMessageAt so the conversation list sorts by recency. */
+  async touchConversation(conversationId: string) {
+    return this.prisma.agentConversation.update({
+      where: { id: conversationId },
+      data: { lastMessageAt: new Date() },
+    });
+  }
+
+  /** Persist the rolling summary and the run id it covers. */
+  async updateConversationSummary(
+    conversationId: string,
+    summary: string,
+    summarizedThroughRunId: string
+  ) {
+    return this.prisma.agentConversation.update({
+      where: { id: conversationId },
+      data: { summary, summarizedThroughRunId },
+    });
+  }
+
+  /** Idempotent: name the conversation with the first message when it is still untitled. */
+  async updateTitleIfDefault(conversationId: string, message: string) {
+    return this.prisma.agentConversation.updateMany({
+      where: { id: conversationId, title: '新会话' },
+      data: { title: message.slice(0, 20) },
+    });
+  }
+
   async updateRun(runId: string, input: UpdateRunInput) {
     return this.prisma.agentRun.update({
       where: { id: runId },

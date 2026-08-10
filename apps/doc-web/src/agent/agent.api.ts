@@ -1,6 +1,24 @@
 import { api } from '../lib/api';
 import { useAuthStore } from '../stores/auth.store';
-import type { AgentEvent, StartAgentRunInput } from './agent.types';
+import type { AgentEvent, ConversationSummary, StartAgentRunInput } from './agent.types';
+
+/** A stored agent run used to rebuild conversation history. */
+export interface RunRecord {
+  id: string;
+  status: string;
+  message: string;
+  finalAnswer: string | null;
+  error: string | null;
+  createdAt: string;
+  proposals: Array<{
+    id: string;
+    status: string;
+    patch: unknown;
+    nodeId: string;
+    baseVersion: number;
+    expiresAt: string | null;
+  }>;
+}
 
 async function parseSse(response: Response, onEvent: (event: AgentEvent) => void): Promise<void> {
   if (!response.ok) {
@@ -87,5 +105,20 @@ export const agentApi = {
   markProposalStale: (proposalId: string) =>
     api
       .post<{ status: 'STALE' }>(`/agent/proposals/${proposalId}/stale`)
+      .then((response) => response.data),
+
+  listConversations: (kbId: string) =>
+    api
+      .get<ConversationSummary[]>('/agent/conversations', { params: { kbId } })
+      .then((response) => response.data),
+
+  createConversation: (kbId: string) =>
+    api
+      .post<ConversationSummary>('/agent/conversations', { kbId })
+      .then((response) => response.data),
+
+  listRuns: (conversationId: string) =>
+    api
+      .get<RunRecord[]>(`/agent/conversations/${encodeURIComponent(conversationId)}/runs`)
       .then((response) => response.data),
 };

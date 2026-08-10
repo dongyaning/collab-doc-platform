@@ -36,7 +36,6 @@ import {
   Empty,
   Input,
   Layout,
-  List,
   Modal,
   Popover,
   Result,
@@ -693,40 +692,31 @@ export function KnowledgeBaseViewPage() {
   }, [editor, contentQuery.data, provider, isEditing]);
 
   const openAgentWorkspace = useCallback(() => {
-    if (!editor || !editable) {
-      modal.warning({ title: 'Enter edit mode before using Agent rewrite.' });
-      return;
+    // 通用 AI 入口：不要求编辑模式与选区；有选区且 Yjs 就绪时带上选区上下文
+    let nextSelection: AgentSelection | null = null;
+    if (editor) {
+      const { from, to } = editor.state.selection;
+      if (from !== to) {
+        const text = editor.state.doc.textBetween(from, to, '\n');
+        if (text.trim()) {
+          const ystate = ySyncPluginKey.getState(editor.state);
+          if (ystate?.type && ystate?.binding?.mapping) {
+            nextSelection = {
+              fromRelPos: Y.relativePositionToJSON(
+                absolutePositionToRelativePosition(from, ystate.type, ystate.binding.mapping)
+              ),
+              toRelPos: Y.relativePositionToJSON(
+                absolutePositionToRelativePosition(to, ystate.type, ystate.binding.mapping)
+              ),
+              content: text,
+            };
+          }
+        }
+      }
     }
-
-    const { from, to } = editor.state.selection;
-    if (from === to) {
-      modal.warning({ title: 'Select text to rewrite.' });
-      return;
-    }
-
-    const text = editor.state.doc.textBetween(from, to, '\n');
-    if (!text.trim()) {
-      modal.warning({ title: 'Select text to rewrite.' });
-      return;
-    }
-
-    const ystate = ySyncPluginKey.getState(editor.state);
-    if (!ystate?.type || !ystate?.binding?.mapping) {
-      modal.warning({ title: 'Collaboration is not ready yet. Try again.' });
-      return;
-    }
-
-    setAgentSelection({
-      fromRelPos: Y.relativePositionToJSON(
-        absolutePositionToRelativePosition(from, ystate.type, ystate.binding.mapping)
-      ),
-      toRelPos: Y.relativePositionToJSON(
-        absolutePositionToRelativePosition(to, ystate.type, ystate.binding.mapping)
-      ),
-      content: text,
-    });
+    setAgentSelection(nextSelection);
     setAgentOpen(true);
-  }, [editable, editor, modal]);
+  }, [editor]);
 
   const exitEditMode = useCallback(() => {
     track('business', 'exit_edit_mode', {
@@ -1066,19 +1056,17 @@ export function KnowledgeBaseViewPage() {
                   )
                 ) : null}
                 {isEditing ? (
-                  <>
-                    <Button icon={<RobotOutlined />} onClick={openAgentWorkspace}>
-                      AI rewrite
-                    </Button>
-                    <Button
-                      icon={<SaveOutlined />}
-                      onClick={onSaveSnapshot}
-                      loading={snapshotPending}
-                    >
-                      Save version
-                    </Button>
-                  </>
+                  <Button
+                    icon={<SaveOutlined />}
+                    onClick={onSaveSnapshot}
+                    loading={snapshotPending}
+                  >
+                    Save version
+                  </Button>
                 ) : null}
+                <Button icon={<RobotOutlined />} onClick={openAgentWorkspace}>
+                  AI
+                </Button>
                 <Button icon={<HistoryOutlined />} onClick={() => setVersionsOpen(true)}>
                   History
                 </Button>
@@ -1135,13 +1123,13 @@ export function KnowledgeBaseViewPage() {
         )}
 
         <Drawer
-          title="AI rewrite"
-          open={agentOpen && !!agentSelection && !!editor && !!nodeId && !!kbId}
+          title="AI 助手"
+          open={agentOpen && !!editor && !!nodeId && !!kbId}
           onClose={() => setAgentOpen(false)}
-          size={420}
+          size={640}
           destroyOnClose
         >
-          {agentSelection && editor && nodeId && kbId ? (
+          {editor && nodeId && kbId ? (
             <AgentWorkspace
               kbId={kbId}
               nodeId={nodeId}
@@ -1413,9 +1401,8 @@ function SharePanel({
           <Spin />
         </div>
       ) : !data ? null : (
-        <List
-          className={styles.memberList}
-          dataSource={[
+        <div className={styles.memberList}>
+          {[
             {
               userId: data.owner.id,
               name: data.owner.name,
@@ -1423,60 +1410,55 @@ function SharePanel({
               role: 'OWNER' as const,
             },
             ...data.members,
-          ]}
-          locale={{ emptyText: 'No collaborators yet.' }}
-          renderItem={(m) => {
-            const isOwnerRow = m.role === 'OWNER';
+          ].map((member) => {
+            const isOwnerRow = member.role === 'OWNER';
             return (
-              <List.Item
-                actions={
-                  isOwnerRow
-                    ? undefined
-                    : [
-                        <Select<AssignableRole>
-                          key="role"
-                          size="small"
-                          value={m.role as AssignableRole}
-                          className={styles.roleSelect}
-                          onChange={(r) => updateMutation.mutate({ userId: m.userId, role: r })}
-                          options={ASSIGNABLE_ROLES.map((r) => ({
-                            value: r,
-                            label: ROLE_LABEL[r],
-                          }))}
-                        />,
-                        <Button
-                          key="remove"
-                          type="text"
-                          danger
-                          size="small"
-                          onClick={() => removeMutation.mutate(m.userId)}
-                        >
-                          ×
-                        </Button>,
-                      ]
-                }
-              >
-                <List.Item.Meta
-                  title={
-                    <span>
-                      {m.name}
-                      {m.userId === currentUserId ? ' (you)' : ''}
-                    </span>
-                  }
-                  description={
-                    <Text type="secondary">
-                      {m.email}
-                      {(m as { includeChildren?: boolean }).includeChildren
-                        ? ' · includes sub-documents'
-                        : ''}
-                    </Text>
-                  }
-                />
-                {isOwnerRow ? <Tag color="blue">Owner</Tag> : null}
-              </List.Item>
+              <div key={member.userId} className={styles.detailListItem}>
+                <div className={styles.detailListContent}>
+                  <Text strong>
+                    {member.name}
+                    {member.userId === currentUserId ? ' (you)' : ''}
+                  </Text>
+                  <Text type="secondary">
+                    {member.email}
+                    {(member as { includeChildren?: boolean }).includeChildren
+                      ? ' · includes sub-documents'
+                      : ''}
+                  </Text>
+                </div>
+                <div className={styles.detailListActions}>
+                  {isOwnerRow ? (
+                    <Tag color="blue">Owner</Tag>
+                  ) : (
+                    <>
+                      <Select<AssignableRole>
+                        size="small"
+                        value={member.role as AssignableRole}
+                        className={styles.roleSelect}
+                        onChange={(nextRole) =>
+                          updateMutation.mutate({ userId: member.userId, role: nextRole })
+                        }
+                        options={ASSIGNABLE_ROLES.map((nextRole) => ({
+                          value: nextRole,
+                          label: ROLE_LABEL[nextRole],
+                        }))}
+                      />
+                      <Button
+                        type="text"
+                        danger
+                        size="small"
+                        aria-label={`Remove ${member.name}`}
+                        onClick={() => removeMutation.mutate(member.userId)}
+                      >
+                        ×
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
             );
-          }}
-        />
+          })}
+        </div>
       )}
     </div>
   );
@@ -1572,9 +1554,8 @@ function KbSharePanel({
           <Spin />
         </div>
       ) : !data ? null : (
-        <List
-          className={styles.memberList}
-          dataSource={[
+        <div className={styles.memberList}>
+          {[
             {
               userId: data.owner.id,
               name: data.owner.name,
@@ -1582,59 +1563,51 @@ function KbSharePanel({
               role: 'OWNER' as const,
             },
             ...data.members,
-          ]}
-          locale={{ emptyText: 'No collaborators yet.' }}
-          renderItem={(m) => {
-            const isOwnerRow = m.role === 'OWNER';
+          ].map((member) => {
+            const isOwnerRow = member.role === 'OWNER';
             return (
-              <List.Item
-                actions={
-                  isOwnerRow
-                    ? undefined
-                    : [
-                        <Select<AssignableRole>
-                          key="role"
-                          size="small"
-                          value={m.role as AssignableRole}
-                          className={styles.roleSelect}
-                          onChange={(r) =>
-                            updateMutation.mutate({
-                              userId: m.userId,
-                              role: r,
-                            })
-                          }
-                          options={ASSIGNABLE_ROLES.map((r) => ({
-                            value: r,
-                            label: ROLE_LABEL[r],
-                          }))}
-                        />,
-                        <Button
-                          key="remove"
-                          type="text"
-                          danger
-                          size="small"
-                          disabled={m.userId === currentUserId}
-                          onClick={() => removeMutation.mutate(m.userId)}
-                        >
-                          ×
-                        </Button>,
-                      ]
-                }
-              >
-                <List.Item.Meta
-                  title={
-                    <span>
-                      {m.name}
-                      {m.userId === currentUserId ? ' (you)' : ''}
-                    </span>
-                  }
-                  description={<Text type="secondary">{m.email}</Text>}
-                />
-                {isOwnerRow ? <Tag color="blue">Owner</Tag> : null}
-              </List.Item>
+              <div key={member.userId} className={styles.detailListItem}>
+                <div className={styles.detailListContent}>
+                  <Text strong>
+                    {member.name}
+                    {member.userId === currentUserId ? ' (you)' : ''}
+                  </Text>
+                  <Text type="secondary">{member.email}</Text>
+                </div>
+                <div className={styles.detailListActions}>
+                  {isOwnerRow ? (
+                    <Tag color="blue">Owner</Tag>
+                  ) : (
+                    <>
+                      <Select<AssignableRole>
+                        size="small"
+                        value={member.role as AssignableRole}
+                        className={styles.roleSelect}
+                        onChange={(nextRole) =>
+                          updateMutation.mutate({ userId: member.userId, role: nextRole })
+                        }
+                        options={ASSIGNABLE_ROLES.map((nextRole) => ({
+                          value: nextRole,
+                          label: ROLE_LABEL[nextRole],
+                        }))}
+                      />
+                      <Button
+                        type="text"
+                        danger
+                        size="small"
+                        disabled={member.userId === currentUserId}
+                        aria-label={`Remove ${member.name}`}
+                        onClick={() => removeMutation.mutate(member.userId)}
+                      >
+                        ×
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
             );
-          }}
-        />
+          })}
+        </div>
       )}
     </div>
   );
@@ -1699,10 +1672,8 @@ function AccessRequestsPanel({
       ) : requests.length === 0 ? (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No access requests." />
       ) : (
-        <List
-          className={styles.accessRequestList}
-          dataSource={requests}
-          renderItem={(request) => {
+        <div className={styles.accessRequestList}>
+          {requests.map((request) => {
             const draft = drafts[request.id] ?? {
               role: request.requestedRole,
               scope: request.scope,
@@ -1716,74 +1687,72 @@ function AccessRequestsPanel({
                   ? `Node: ${request.node.title}`
                   : 'Current node';
             return (
-              <List.Item>
-                <div className={styles.accessRequestItem}>
-                  <div>
-                    <Text strong>{request.requester?.name ?? request.requesterId}</Text>
-                    <Tag className={styles.requestStatusTag}>{request.status}</Tag>
-                  </div>
-                  <Text type="secondary">
-                    {request.requester?.email ?? ''} · {scopeLabel} ·{' '}
-                    {ROLE_LABEL[request.requestedRole]}
-                  </Text>
-                  {request.message ? <Text>{request.message}</Text> : null}
-                  {isPending ? (
-                    <Space wrap>
-                      <Select<AccessRequestScope>
-                        size="small"
-                        value={draft.scope}
-                        className={styles.scopeSelect}
-                        onChange={(nextScope) =>
-                          setDrafts((prev) => ({
-                            ...prev,
-                            [request.id]: { ...draft, scope: nextScope },
-                          }))
-                        }
-                        options={[
-                          ...(request.nodeId
-                            ? [{ value: 'NODE' as const, label: 'Current node' }]
-                            : []),
-                          { value: 'KNOWLEDGE_BASE' as const, label: 'Entire KB' },
-                        ]}
-                      />
-                      <Select<AssignableRole>
-                        size="small"
-                        value={draft.role}
-                        className={styles.roleSelect}
-                        onChange={(nextRole) =>
-                          setDrafts((prev) => ({
-                            ...prev,
-                            [request.id]: { ...draft, role: nextRole },
-                          }))
-                        }
-                        options={ASSIGNABLE_ROLES.map((role) => ({
-                          value: role,
-                          label: ROLE_LABEL[role],
-                        }))}
-                      />
-                      <Button
-                        size="small"
-                        type="primary"
-                        loading={reviewMutation.isPending}
-                        onClick={() => reviewMutation.mutate({ request, status: 'APPROVED' })}
-                      >
-                        Approve
-                      </Button>
-                      <Button
-                        size="small"
-                        danger
-                        loading={reviewMutation.isPending}
-                        onClick={() => reviewMutation.mutate({ request, status: 'REJECTED' })}
-                      >
-                        Reject
-                      </Button>
-                    </Space>
-                  ) : null}
+              <div key={request.id} className={styles.accessRequestItem}>
+                <div>
+                  <Text strong>{request.requester?.name ?? request.requesterId}</Text>
+                  <Tag className={styles.requestStatusTag}>{request.status}</Tag>
                 </div>
-              </List.Item>
+                <Text type="secondary">
+                  {request.requester?.email ?? ''} · {scopeLabel} ·{' '}
+                  {ROLE_LABEL[request.requestedRole]}
+                </Text>
+                {request.message ? <Text>{request.message}</Text> : null}
+                {isPending ? (
+                  <Space wrap>
+                    <Select<AccessRequestScope>
+                      size="small"
+                      value={draft.scope}
+                      className={styles.scopeSelect}
+                      onChange={(nextScope) =>
+                        setDrafts((prev) => ({
+                          ...prev,
+                          [request.id]: { ...draft, scope: nextScope },
+                        }))
+                      }
+                      options={[
+                        ...(request.nodeId
+                          ? [{ value: 'NODE' as const, label: 'Current node' }]
+                          : []),
+                        { value: 'KNOWLEDGE_BASE' as const, label: 'Entire KB' },
+                      ]}
+                    />
+                    <Select<AssignableRole>
+                      size="small"
+                      value={draft.role}
+                      className={styles.roleSelect}
+                      onChange={(nextRole) =>
+                        setDrafts((prev) => ({
+                          ...prev,
+                          [request.id]: { ...draft, role: nextRole },
+                        }))
+                      }
+                      options={ASSIGNABLE_ROLES.map((nextRole) => ({
+                        value: nextRole,
+                        label: ROLE_LABEL[nextRole],
+                      }))}
+                    />
+                    <Button
+                      size="small"
+                      type="primary"
+                      loading={reviewMutation.isPending}
+                      onClick={() => reviewMutation.mutate({ request, status: 'APPROVED' })}
+                    >
+                      Approve
+                    </Button>
+                    <Button
+                      size="small"
+                      danger
+                      loading={reviewMutation.isPending}
+                      onClick={() => reviewMutation.mutate({ request, status: 'REJECTED' })}
+                    >
+                      Reject
+                    </Button>
+                  </Space>
+                ) : null}
+              </div>
             );
-          }}
-        />
+          })}
+        </div>
       )}
     </div>
   );
@@ -1811,37 +1780,28 @@ function VersionsPanel({
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No versions yet." />;
   }
   return (
-    <List
-      dataSource={versions}
-      renderItem={(v) => (
-        <List.Item
-          actions={[
-            <Button
-              key="view"
-              size="small"
-              disabled={selectedId === v.id}
-              onClick={() => onSelect(v.id)}
-            >
-              {selectedId === v.id ? 'Viewing' : 'View'}
-            </Button>,
-          ]}
-        >
-          <List.Item.Meta
-            title={
-              <span>
-                v{v.version}
-                {v.label ? ` · ${v.label}` : v.createdById ? '' : ' · auto'}
-              </span>
-            }
-            description={
-              <Text type="secondary" className={styles.versionTime}>
-                {new Date(v.createdAt).toLocaleString()}
-              </Text>
-            }
-          />
-        </List.Item>
-      )}
-    />
+    <div className={styles.versionList}>
+      {versions.map((version) => (
+        <div key={version.id} className={styles.detailListItem}>
+          <div className={styles.detailListContent}>
+            <Text strong>
+              v{version.version}
+              {version.label ? ` · ${version.label}` : version.createdById ? '' : ' · auto'}
+            </Text>
+            <Text type="secondary" className={styles.versionTime}>
+              {new Date(version.createdAt).toLocaleString()}
+            </Text>
+          </div>
+          <Button
+            size="small"
+            disabled={selectedId === version.id}
+            onClick={() => onSelect(version.id)}
+          >
+            {selectedId === version.id ? 'Viewing' : 'View'}
+          </Button>
+        </div>
+      ))}
+    </div>
   );
 }
 

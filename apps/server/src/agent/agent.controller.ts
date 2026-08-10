@@ -1,10 +1,13 @@
 import {
+  BadRequestException,
   Body,
   Controller,
+  Get,
   Inject,
   NotFoundException,
   Param,
   Post,
+  Query,
   Req,
   Res,
   UseGuards,
@@ -41,6 +44,11 @@ class CreateRunDto {
   };
 }
 
+class CreateConversationDto {
+  @IsString()
+  kbId!: string;
+}
+
 @UseGuards(JwtAuthGuard)
 @Controller('agent')
 export class AgentController {
@@ -49,11 +57,36 @@ export class AgentController {
     @Inject(AgentService) private readonly agentService: AgentService
   ) {}
 
+  /** List conversations of the current user, scoped to a knowledge base. */
+  @Get('conversations')
+  async listConversations(@Query('kbId') kbId: string, @CurrentUser() user: AuthUser) {
+    return this.agentService.listConversations(user.id, kbId);
+  }
+
+  /** Create a conversation bound to the current knowledge base. */
+  @Post('conversations')
+  async createConversation(@Body() dto: CreateConversationDto, @CurrentUser() user: AuthUser) {
+    const conversation = await this.agentService.createConversation(user.id, dto.kbId);
+    return {
+      id: conversation.id,
+      title: conversation.title,
+      lastMessageAt: conversation.lastMessageAt,
+    };
+  }
+
+  /** History runs of a conversation, used to rebuild the message stream. */
+  @Get('conversations/:conversationId/runs')
+  async listRuns(@Param('conversationId') conversationId: string, @CurrentUser() user: AuthUser) {
+    await this.assertConversationOwner(conversationId, user.id);
+    return this.agentService.listConversationRuns(conversationId);
+  }
+
   /**
    * Create a new agent run and stream results via SSE.
    *
-   * The conversation ID is derived from the authenticated user + kbId.
-   * The SSE stream emits token, tool_call, proposal_ready, and final_answer events.
+   * The conversation must belong to the current user and be bound to the
+   * same knowledge base. The SSE stream emits token, tool_call,
+   * proposal_ready, and final_answer events.
    */
   @Post('conversations/:conversationId/runs')
   async createRun(
@@ -63,6 +96,11 @@ export class AgentController {
     @Req() req: Request,
     @Res() res: Response
   ) {
+    const conversation = await this.assertConversationOwner(conversationId, user.id);
+    if (conversation.kbId !== dto.kbId) {
+      throw new BadRequestException('kbId does not match the conversation');
+    }
+
     // SSE headers
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -185,6 +223,14 @@ export class AgentController {
       completedAt: new Date(),
     });
     return { ok: true, runId: id, status: 'CANCELLED' };
+  }
+
+  private async assertConversationOwner(conversationId: string, userId: string) {
+    const conversation = await this.agentService.getConversation(conversationId);
+    if (!conversation || conversation.userId !== userId) {
+      throw new NotFoundException('Agent conversation not found');
+    }
+    return conversation;
   }
 
   private assertProposalOwner(ownerId: string | undefined, userId: string) {
