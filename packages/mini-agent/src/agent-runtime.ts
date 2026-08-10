@@ -4,6 +4,7 @@ import type {
   ModelProvider,
   RunBudget,
   RunRequest,
+  ToolCall,
   ToolExecutionContext,
 } from './types.js';
 
@@ -16,10 +17,11 @@ const DEFAULT_BUDGET: RunBudget = {
   runTimeoutMs: 120000,
 };
 
-const SYSTEM_PROMPT = `You are a helpful AI assistant embedded in a collaborative document platform.
-You can read documents, search knowledge bases, and propose document changes.
-When the user asks you to modify document content, use the propose_document_patch tool.
-Always explain what you're doing before making changes.`;
+const SYSTEM_PROMPT = `你是一个嵌入在协作文档平台中的得力人工智能助手。
+您可以阅读文档、搜索知识库，并提出文档修改建议。
+当用户要求你修改文档内容时，请使用propose_document_patch工具。
+在做出任何改变之前，一定要先解释清楚你在做什么。
+如果下方用户没有专门要求语言，请用中文回答。`;
 
 let nextRunId = 1;
 
@@ -54,6 +56,7 @@ export class AgentRuntime {
 
     const messages: Message[] = [
       { role: 'system', content: SYSTEM_PROMPT },
+      ...(request.history ?? []),
       { role: 'user', content: this.buildUserMessage(request) },
     ];
 
@@ -76,6 +79,9 @@ export class AgentRuntime {
 
         let hasToolCall = false;
         const pendingToolArgs = new Map<string, unknown>();
+        const stepToolCalls: ToolCall[] = [];
+        const stepToolResults: { content: string; toolCallId: string }[] = [];
+        let stepContent = '';
 
         for await (const event of response) {
           if (ctx.signal.aborted) {
@@ -85,12 +91,18 @@ export class AgentRuntime {
 
           switch (event.type) {
             case 'token':
+              stepContent += event.text;
               yield { type: 'token', runId, text: event.text, step };
               break;
 
             case 'tool_call_start':
               hasToolCall = true;
               pendingToolArgs.set(event.toolCallId, event.args);
+              stepToolCalls.push({
+                id: event.toolCallId,
+                name: event.toolName,
+                args: event.args as Record<string, unknown>,
+              });
               yield {
                 type: 'tool_call_start',
                 runId,
@@ -112,8 +124,7 @@ export class AgentRuntime {
                   error: `Unknown tool: ${event.toolName}`,
                   step,
                 };
-                messages.push({
-                  role: 'tool',
+                stepToolResults.push({
                   content: `Error: Unknown tool ${event.toolName}`,
                   toolCallId: event.toolCallId,
                 });
@@ -133,8 +144,7 @@ export class AgentRuntime {
                   result,
                   step,
                 };
-                messages.push({
-                  role: 'tool',
+                stepToolResults.push({
                   content: JSON.stringify(result),
                   toolCallId: event.toolCallId,
                 });
@@ -148,8 +158,7 @@ export class AgentRuntime {
                   error: msg,
                   step,
                 };
-                messages.push({
-                  role: 'tool',
+                stepToolResults.push({
                   content: `Error: ${msg}`,
                   toolCallId: event.toolCallId,
                 });
@@ -166,8 +175,7 @@ export class AgentRuntime {
                 error: event.error,
                 step,
               };
-              messages.push({
-                role: 'tool',
+              stepToolResults.push({
                 content: `Error: ${event.error}`,
                 toolCallId: event.toolCallId,
               });
@@ -191,13 +199,22 @@ export class AgentRuntime {
         }
 
         // If the model returned tool calls but its final turn didn't end
-        // with a final_answer, we need to add an assistant message and loop.
+        // with a final_answer, append the assistant message (with the real
+        // tool_calls) BEFORE the tool result messages, so the next API round
+        // sees each tool message paired with its preceding assistant call.
         if (hasToolCall) {
           messages.push({
             role: 'assistant',
-            content: '',
-            toolCalls: [], // The model events carried the calls inline
+            content: stepContent,
+            toolCalls: stepToolCalls,
           });
+          for (const result of stepToolResults) {
+            messages.push({
+              role: 'tool',
+              content: result.content,
+              toolCallId: result.toolCallId,
+            });
+          }
         }
 
         step++;
