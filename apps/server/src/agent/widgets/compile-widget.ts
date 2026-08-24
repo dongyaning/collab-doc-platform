@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const SERVER_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 
 export interface CompileWidgetResult {
-  /** gzip 压缩后的自包含 ESM（已 bundle React），用于入库。 */
+  /** gzip 压缩后的 ESM 产物（React 已 external，iframe 内经 importmap 共享），用于入库。 */
   jsCodeGzip: Uint8Array;
   /** 未压缩产物，仅用于调试信息。 */
   size: number;
@@ -17,11 +17,12 @@ export interface CompileError {
 }
 
 /**
- * 把 Agent 产出的 TSX 组件编译为自包含 ESM bundle。
+ * 把 Agent 产出的 TSX 组件编译为 ESM bundle。
  *
- * 编译入口是服务端拼装的包装文件：import 组件源码 + createRoot 挂载逻辑，
- * react / react-dom/client 一并内联，产物是 iframe 内唯一的 React 副本，
- * 避免 iframe 内出现两份 React 导致 hooks 失效。
+ * 编译入口是服务端拼装的包装文件：import 组件源码 + createRoot 挂载逻辑。
+ * react / react-dom / react/jsx-runtime 不打包进产物（external），iframe 内通过
+ * importmap 解析到服务端提供的共享 React ESM（见 build-shared-react.ts），
+ * 保证 iframe 内只有一份 React（避免 hooks 失效），同时让 widget 产物只包含业务代码。
  */
 export async function compileWidget(sourceCode: string): Promise<CompileWidgetResult> {
   const wrapper = [
@@ -89,6 +90,8 @@ export async function compileWidget(sourceCode: string): Promise<CompileWidgetRe
     bundle: true,
     format: 'esm',
     jsx: 'automatic',
+    // React 相关模块不打包，产物保留裸 import，iframe 内经 importmap 解析到共享 React。
+    external: ['react', 'react-dom/client', 'react/jsx-runtime'],
     define: { 'process.env.NODE_ENV': '"production"' },
     minify: true,
     write: false,

@@ -12,7 +12,17 @@ const SANDBOX_HTML = `<!doctype html><html><head><meta charset="utf-8"><style>
   html,body{margin:0;padding:0;background:transparent}
   #root{min-height:40px}
   *{box-sizing:border-box}
-</style></head><body><div id="root"></div>
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "react": "/shared/react-all.esm.js",
+    "react-dom/client": "/shared/react-all.esm.js",
+    "react/jsx-runtime": "/shared/react-all.esm.js"
+  }
+}
+</script>
+</head><body><div id="root"></div>
 <script type="module">
   const host = window.parent;
   const container = document.getElementById('root');
@@ -60,6 +70,8 @@ const SANDBOX_HTML = `<!doctype html><html><head><meta charset="utf-8"><style>
  *
  * 隔离：sandbox="allow-scripts"（不带 allow-same-origin），iframe 为 opaque origin。
  * 通信：postMessage 白名单协议，props 下发 / updateProps 回写 / 高度上报 / 错误上报。
+ * React：widget 产物 external 掉 React，iframe 内 importmap 把 react / react-dom/client
+ * 解析到服务端共享 ESM（/shared/*），所有 iframe 共用同一份 React，只下载一次。
  * 首次 init 携带 jsCode（iframe 内 import blob 加载），后续 props 变化走 update-props，
  * 避免重新 import 导致组件重挂载丢状态。
  */

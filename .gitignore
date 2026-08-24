@@ -35,3 +35,6 @@ coverage
 .cache
 .turbo
 .husky/_
+
+# runtime generated assets (shared react esm for agent widget iframes)
+apps/server/assets/

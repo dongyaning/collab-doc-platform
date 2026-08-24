@@ -31,6 +31,10 @@ export default defineConfig(({ mode }) => {
           target: apiBase,
           changeOrigin: true,
         },
+        '/shared': {
+          target: apiBase,
+          changeOrigin: true,
+        },
       },
     },
   };

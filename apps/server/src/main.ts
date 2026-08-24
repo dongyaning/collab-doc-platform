@@ -5,6 +5,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module.js';
 import { CollabGateway } from './collab/collab.gateway.js';
+import { buildSharedReactAssets } from './agent/widgets/build-shared-react.js';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -17,6 +18,18 @@ async function bootstrap() {
   const uploadsDir = process.env.FILE_STORAGE_LOCAL_DIR ?? './uploads';
   const resolvedUploadsDir = isAbsolute(uploadsDir) ? uploadsDir : join(process.cwd(), uploadsDir);
   app.useStaticAssets(resolvedUploadsDir, { prefix: '/uploads' });
+
+  // Build and serve shared React ESM for agent widget iframes (importmap target).
+  // Cross-origin module loading requires CORS; files are immutable per build.
+  const sharedWidgetAssetsDir = join(process.cwd(), 'assets/widget-shared');
+  await buildSharedReactAssets(sharedWidgetAssetsDir);
+  app.useStaticAssets(sharedWidgetAssetsDir, {
+    prefix: '/shared',
+    setHeaders: (res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    },
+  });
 
   app.setGlobalPrefix('api', { exclude: ['collab', 'uploads'] });
 
